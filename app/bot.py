@@ -1,6 +1,7 @@
 import asyncio
 import sys
 from pathlib import Path
+from aiohttp import web
 
 sys.path.append(str(Path(__file__).parent.parent))
 
@@ -51,3 +52,16 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+
+async def health_check(request):
+    return web.Response(text="OK")
+
+async def start_web_server():
+    app = web.Application()
+    app.router.add_get("/", health_check)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, host="0.0.0.0", port=10000)
+    await site.start()
+    print("✅ Health check server started on port 10000")
