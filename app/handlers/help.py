@@ -20,28 +20,28 @@ async def cmd_help(message: Message):
 
     if user.role == UserRole.TRAINER:
         help_text = (
-            "📚 **Справка для тренера**\n\n"
-            "👥 **Управление учениками:**\n"
+            "📚 <b>Справка для тренера</b>\n\n"
+            "👥 <b>Управление учениками:</b>\n"
             "/add_client @username - добавить ученика\n"
             "/my_clients - список учеников\n"
             "/delete_client @username - удалить ученика\n\n"
-            "📊 **Статистика и отчёты:**\n"
+            "📊 <b>Статистика и отчёты:</b>\n"
             "/stats - графики прогресса ученика\n"
             "/report @username - PDF-отчёт\n\n"
-            "⏰ **Напоминания:**\n"
+            "⏰ <b>Напоминания:</b>\n"
             "/set_reminder - настроить напоминания\n"
             "/my_reminders - мои напоминания\n\n"
-            "❓ **Помощь:**\n"
+            "❓ <b>Помощь:</b>\n"
             "/help - эта справка"
         )
     else:
         help_text = (
-            "📚 **Справка для ученика**\n\n"
-            "📝 **Замеры:**\n"
+            "📚 <b>Справка для ученика</b>\n\n"
+            "📝 <b>Замеры:</b>\n"
             "/set_measurements - внести замеры\n"
             "/my_progress - мой прогресс\n\n"
-            "❓ **Помощь:**\n"
+            "❓ <b>Помощь:</b>\n"
             "/help - эта справка"
         )
 
-    await message.answer(help_text, parse_mode="Markdown")
+    await message.answer(help_text, parse_mode="HTML")
