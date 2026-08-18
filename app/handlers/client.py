@@ -13,7 +13,7 @@ db = DatabaseService()
 
 @router.message(Command("add_client"))
 async def add_client(message: Message):
-    user = await db.get_user(message.from_user.id)
+    user = db.get_user(message.from_user.id)
     if not user or user.role != "trainer":
         await message.answer("❌ Эта команда доступна только тренерам.")
         return
@@ -27,7 +27,7 @@ async def add_client(message: Message):
         return
 
     username = args[1].lstrip('@')
-    client = await db.get_user_by_username(username)
+    client = db.get_user_by_username(username)
 
     if not client:
         await message.answer(f"❌ Пользователь @{username} не найден.")
@@ -52,12 +52,12 @@ async def accept_invite(callback: CallbackQuery):
     _, trainer_id = callback.data.split(":")
     trainer_id = int(trainer_id)
 
-    client = await db.get_user(callback.from_user.id)
+    client = db.get_user(callback.from_user.id)
     if not client:
         await callback.answer("❌ Сначала зарегистрируйтесь через /start")
         return
 
-    success = await db.add_client_to_trainer(trainer_id, client.id)
+    success = db.add_client_to_trainer(trainer_id, client.id)
 
     if success:
         await callback.message.edit_text(
@@ -77,12 +77,12 @@ async def accept_invite(callback: CallbackQuery):
 
 @router.message(Command("my_clients"))
 async def my_clients(message: Message):
-    user = await db.get_user(message.from_user.id)
+    user = db.get_user(message.from_user.id)
     if not user or user.role != "trainer":
         await message.answer("❌ Эта команда доступна только тренерам.")
         return
 
-    clients = await db.get_trainer_clients(user.id)
+    clients = db.get_trainer_clients(user.id)
 
     if not clients:
         await message.answer(
@@ -118,7 +118,7 @@ async def client_action(callback: CallbackQuery):
 
 
 async def view_client_info(callback: CallbackQuery, client_id: int):
-    client = await db.get_user(client_id)
+    client = db.get_user(client_id)
     if not client:
         await callback.message.answer("❌ Ученик не найден.")
         return
@@ -133,12 +133,12 @@ async def view_client_info(callback: CallbackQuery, client_id: int):
 
 
 async def view_client_measurements(callback: CallbackQuery, client_id: int):
-    client = await db.get_user(client_id)
+    client = db.get_user(client_id)
     if not client:
         await callback.message.answer("❌ Ученик не найден.")
         return
 
-    measurements = await db.get_measurements(client_id, days=30)
+    measurements = db.get_measurements(client_id, days=30)
 
     if not measurements:
         await callback.message.answer(
@@ -161,7 +161,7 @@ async def view_client_measurements(callback: CallbackQuery, client_id: int):
 async def view_client_chart(callback: CallbackQuery, client_id: int):
     from app.services.chart_service import ChartService
 
-    measurements = await db.get_measurements(client_id, days=30)
+    measurements = db.get_measurements(client_id, days=30)
 
     if len(measurements) < 2:
         await callback.message.answer(
@@ -170,7 +170,7 @@ async def view_client_chart(callback: CallbackQuery, client_id: int):
         return
 
     chart_service = ChartService()
-    chart_path = await chart_service.generate_stats_chart(client_id, measurements)
+    chart_path = chart_service.generate_stats_chart(client_id, measurements)
 
     if chart_path:
         await callback.message.answer_document(
@@ -185,18 +185,18 @@ async def generate_client_report(callback: CallbackQuery, client_id: int):
     from app.services.pdf_service import PDFService
     from app.services.chart_service import ChartService
 
-    client = await db.get_user(client_id)
+    client = db.get_user(client_id)
     if not client:
         await callback.message.answer("❌ Ученик не найден.")
         return
 
-    measurements = await db.get_measurements(client_id, days=28)
+    measurements = db.get_measurements(client_id, days=28)
 
     chart_service = ChartService()
-    chart_path = await chart_service.generate_report_chart(client_id, measurements)
+    chart_path = chart_service.generate_report_chart(client_id, measurements)
 
     pdf_service = PDFService()
-    pdf_path = await pdf_service.generate_client_report(
+    pdf_path = pdf_service.generate_client_report(
         client_id, client, measurements, chart_path
     )
 
@@ -221,12 +221,12 @@ async def delete_client_confirm(callback: CallbackQuery):
     _, client_id = callback.data.split(":")
     client_id = int(client_id)
 
-    user = await db.get_user(callback.from_user.id)
+    user = db.get_user(callback.from_user.id)
     if not user:
         await callback.answer("❌ Ошибка аутентификации.")
         return
 
-    await db.remove_client_from_trainer(user.id, client_id)
+    db.remove_client_from_trainer(user.id, client_id)
 
     await callback.message.edit_text(
         "✅ Ученик удален из вашего списка."
@@ -236,7 +236,7 @@ async def delete_client_confirm(callback: CallbackQuery):
 
 @router.message(Command("delete_client"))
 async def delete_client(message: Message):
-    user = await db.get_user(message.from_user.id)
+    user = db.get_user(message.from_user.id)
     if not user or user.role != "trainer":
         await message.answer("❌ Эта команда доступна только тренерам.")
         return
@@ -250,18 +250,18 @@ async def delete_client(message: Message):
         return
 
     username = args[1].lstrip('@')
-    client = await db.get_user_by_username(username)
+    client = db.get_user_by_username(username)
 
     if not client:
         await message.answer(f"❌ Пользователь @{username} не найден.")
         return
 
-    clients = await db.get_trainer_clients(user.id)
+    clients = db.get_trainer_clients(user.id)
     if client.id not in [c.id for c in clients]:
         await message.answer(f"❌ @{username} не является вашим учеником.")
         return
 
-    await db.remove_client_from_trainer(user.id, client.id)
+    db.remove_client_from_trainer(user.id, client.id)
     await message.answer(f"✅ Ученик @{username} удален из вашего списка.")
 
     await message.bot.send_message(
@@ -272,7 +272,7 @@ async def delete_client(message: Message):
 
 @router.message(Command("report"))
 async def report_command(message: Message):
-    user = await db.get_user(message.from_user.id)
+    user = db.get_user(message.from_user.id)
     if not user or user.role != "trainer":
         await message.answer("❌ Эта команда доступна только тренерам.")
         return
@@ -286,27 +286,27 @@ async def report_command(message: Message):
         return
 
     username = args[1].lstrip('@')
-    client = await db.get_user_by_username(username)
+    client = db.get_user_by_username(username)
 
     if not client:
         await message.answer(f"❌ Пользователь @{username} не найден.")
         return
 
-    clients = await db.get_trainer_clients(user.id)
+    clients = db.get_trainer_clients(user.id)
     if client.id not in [c.id for c in clients]:
         await message.answer(f"❌ @{username} не является вашим учеником.")
         return
 
-    measurements = await db.get_measurements(client.id, days=28)
+    measurements = db.get_measurements(client.id, days=28)
 
     from app.services.pdf_service import PDFService
     from app.services.chart_service import ChartService
 
     chart_service = ChartService()
-    chart_path = await chart_service.generate_report_chart(client.id, measurements)
+    chart_path = chart_service.generate_report_chart(client.id, measurements)
 
     pdf_service = PDFService()
-    pdf_path = await pdf_service.generate_client_report(
+    pdf_path = pdf_service.generate_client_report(
         client.id, client, measurements, chart_path
     )
 
