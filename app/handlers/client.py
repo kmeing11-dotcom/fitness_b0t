@@ -2,15 +2,17 @@ from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, BufferedInputFile
 from aiogram.filters import Command
 from aiogram.enums import ParseMode
+from datetime import datetime
 from app.services.db_service import DatabaseService
 from app.models import UserRole
 from app.keyboards.inline import (
     get_clients_list_keyboard,
     get_client_action_keyboard,
-    get_confirm_delete_keyboard,
+   get_confirm_delete_keyboard,
     get_client_info_keyboard,
     get_back_keyboard,
-    get_cancel_keyboard
+    get_cancel_keyboard,
+    get_client_actions_keyboard
 )
 from app.utils.logger import get_logger
 import traceback
@@ -323,6 +325,7 @@ async def view_client_info(callback: CallbackQuery, client_id: int):
             "❌ Ученик не найден.",
             reply_markup=get_back_keyboard()
         )
+        await callback.answer()
         return
 
     goal_map = {
@@ -348,11 +351,10 @@ async def view_client_info(callback: CallbackQuery, client_id: int):
     measurements = db.get_measurements(client_id, days=365)
     text += f"📊 Замеров: {len(measurements)}\n"
 
-    keyboard = get_client_info_keyboard(client_id)
     await callback.message.edit_text(
         text,
         parse_mode=ParseMode.HTML,
-        reply_markup=keyboard
+        reply_markup=get_client_actions_keyboard(client_id)
     )
     await callback.answer()
 
@@ -489,7 +491,10 @@ async def generate_client_report(callback: CallbackQuery, client_id: int):
 
     pdf_service = PDFService()
     pdf_path = await pdf_service.generate_client_report(
-        client_id, client, measurements, chart_path
+        user_id=client_id,
+        client=client,
+        measurements=measurements,
+        chart_path=chart_path
     )
 
     if not pdf_path:
@@ -578,7 +583,8 @@ async def delete_client_confirm(callback: CallbackQuery):
         try:
             await callback.bot.send_message(
                 chat_id=client.telegram_id,
-                text=f"ℹ️ Тренер <b>{user.full_name}</b> удалил вас из списка учеников."
+                text=f"ℹ️ Тренер <b>{user.full_name}</b> удалил вас из списка учеников.",
+                parse_mode=ParseMode.HTML
             )
         except Exception as e:
             logger.warning(f"Could not notify client {client_id}: {e}")
@@ -646,6 +652,3 @@ async def delete_client(message: Message):
     except Exception as e:
         logger.error(f"Error in delete_client: {e}")
         await message.answer("❌ Ошибка при удалении ученика.")
-    keyboard = get_confirm_delete_keyboard(client_id)
-
-    await callback.message.edit_text(
