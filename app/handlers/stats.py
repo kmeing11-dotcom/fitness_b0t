@@ -5,8 +5,7 @@ from app.services.db_service import DatabaseService
 from app.services.chart_service import ChartService
 from app.keyboards.inline import clients_list_keyboard
 import traceback
-import os
-from pathlib import Path
+from io import BytesIO
 
 router = Router()
 db = DatabaseService()
@@ -84,39 +83,24 @@ async def show_client_stats(callback: CallbackQuery):
             print(f"❌ Замеров меньше 2")
             return
 
-        # 5. Проверяем, что папка temp/ существует
-        from app.config import Config
-        Config.ensure_temp_folder()
-        temp_path = Path(Config.TEMP_FOLDER)
-        print(f"📁 Папка temp/ существует: {temp_path.exists()}")
-
-        # 6. Генерируем график
+        # 5. Генерируем график в память (без сохранения на диск)
         chart_service = ChartService()
         print(f"🔄 Начинаем генерацию графика...")
-        chart_path = chart_service.generate_stats_chart(client_id, measurements)
-        print(f"📈 chart_path после генерации: {chart_path}")
-
-        if not chart_path:
+        chart_data = await chart_service.generate_stats_chart_bytes(client_id, measurements)
+        
+        if not chart_data:
             await callback.message.answer("❌ Не удалось сгенерировать график.")
             await callback.answer()
-            print(f"❌ chart_path вернул None")
+            print(f"❌ chart_data вернул None")
             return
 
-        # 7. Отправляем график через байты (универсальный способ)
-        print(f"✅ График создан: {chart_path}")
-        with open(chart_path, 'rb') as f:
-            await callback.message.answer_photo(
-                photo=f.read(),
-                caption=f"📊 Статистика прогресса: {client.full_name}"
-            )
+        # 6. Отправляем график прямо из памяти
+        print(f"✅ График создан в памяти")
+        await callback.message.answer_photo(
+            photo=BytesIO(chart_data),
+            caption=f"📊 Статистика прогресса: {client.full_name}"
+        )
         print(f"✅ График успешно отправлен ученику {client.full_name}")
-
-        # 8. Принудительно удаляем файл после отправки (чтобы не засорять temp/)
-        try:
-            os.remove(chart_path)
-            print(f"🗑️ Временный файл удалён: {chart_path}")
-        except:
-            pass
 
         await callback.answer()
 
