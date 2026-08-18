@@ -17,10 +17,12 @@ async def admin_stats(message: Message):
         await message.answer("❌ Доступ запрещен.")
         return
 
+    # Собираем данные
     trainers = db.get_users_by_role(UserRole.TRAINER)
     clients = db.get_users_by_role(UserRole.CLIENT)
     subs = db.get_all_active_subscriptions()
 
+    # Формируем ответ
     response = (
         "📊 Статистика системы:\n\n"
         f"👨‍🏫 Тренеры: {len(trainers)}\n"
@@ -28,7 +30,12 @@ async def admin_stats(message: Message):
         f"💳 Активных подписок (Pro): {subs}\n"
         f"👥 Всего пользователей: {len(trainers) + len(clients)}"
     )
+
+    # Отправляем в Telegram (с принудительным логированием в чат)
     await message.answer(response)
+
+    # Для отладки — напечатаем в лог Render (чтобы точно знать, что код дошёл сюда)
+    print(f"✅ admin_stats executed. Trainers={len(trainers)}, Clients={len(clients)}, Subs={subs}")
 
 @router.message(Command("set_trial"))
 async def set_trial(message: Message):
