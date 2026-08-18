@@ -20,7 +20,7 @@ class MeasurementStates(StatesGroup):
 
 @router.message(Command("set_measurements"))
 async def start_measurements(message: Message, state: FSMContext):
-    user = await db.get_user(message.from_user.id)
+    user = db.get_user(message.from_user.id)
     if not user or user.role != UserRole.CLIENT:
         await message.answer("❌ Эта команда доступна только ученикам.")
         return
@@ -109,7 +109,7 @@ async def process_biceps(message: Message, state: FSMContext):
             return
 
     data = await state.get_data()
-    user = await db.get_user(message.from_user.id)
+    user = db.get_user(message.from_user.id)
 
     measurement_data = {
         key: data.get(key) for key in ['weight', 'waist', 'hips', 'chest', 'biceps']
@@ -121,7 +121,7 @@ async def process_biceps(message: Message, state: FSMContext):
         await state.clear()
         return
 
-    await db.create_measurement(user.id, measurement_data)
+    db.create_measurement(user.id, measurement_data)
 
     response = "✅ Замеры сохранены!\n\n"
     for key, value in measurement_data.items():
@@ -147,12 +147,12 @@ async def process_biceps(message: Message, state: FSMContext):
 
 @router.message(Command("my_progress"))
 async def my_progress(message: Message):
-    user = await db.get_user(message.from_user.id)
+    user = db.get_user(message.from_user.id)
     if not user or user.role != UserRole.CLIENT:
         await message.answer("❌ Эта команда доступна только ученикам.")
         return
 
-    measurements = await db.get_measurements(user.id, days=30)
+    measurements = db.get_measurements(user.id, days=30)
 
     if not measurements:
         await message.answer(
