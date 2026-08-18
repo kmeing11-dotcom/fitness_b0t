@@ -63,3 +63,13 @@ def client_info_keyboard(client_id):
         [InlineKeyboardButton(text="📄 Отчёт", callback_data=f"report_{client_id}")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=kb)
+def get_back_keyboard() -> ReplyKeyboardMarkup:
+    """Клавиатура с кнопкой 'Назад'"""
+    kb = [[KeyboardButton(text="🔙 Назад")]]
+    return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
+
+
+def get_cancel_keyboard() -> ReplyKeyboardMarkup:
+    """Клавиатура с кнопкой 'Отмена'"""
+    kb = [[KeyboardButton(text="❌ Отмена")]]
+    return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True, one_time_keyboard=True)
