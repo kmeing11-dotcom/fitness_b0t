@@ -34,8 +34,12 @@ async def stats_command(message: Message):
 
 @router.callback_query(F.data.startswith("stats_"))
 async def show_client_stats(callback: CallbackQuery):
-    _, client_id = callback.data.split(":")
-    client_id = int(client_id)
+    # Разделяем по "_" (подчёркивание), а не по ":"
+    parts = callback.data.split("_")
+    if len(parts) != 2:
+        await callback.answer("❌ Ошибка в данных.")
+        return
+    client_id = int(parts[1])
 
     client = db.get_user(client_id)
     if not client:
@@ -51,6 +55,7 @@ async def show_client_stats(callback: CallbackQuery):
         await callback.answer()
         return
 
+    from app.services.chart_service import ChartService
     chart_service = ChartService()
     chart_path = chart_service.generate_stats_chart(client_id, measurements)
 
