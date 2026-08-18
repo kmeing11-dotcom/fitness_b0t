@@ -26,7 +26,7 @@ class RegistrationStates(StatesGroup):
 
 @router.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
-    user = await db.get_user(message.from_user.id)
+    user = db.get_user(message.from_user.id)
     
     if user:
         if user.role == UserRole.TRAINER:
@@ -85,7 +85,7 @@ async def process_trainer_phone(message: Message, state: FSMContext):
 @router.message(StateFilter(RegistrationStates.trainer_studio))
 async def process_trainer_studio(message: Message, state: FSMContext):
     data = await state.get_data()
-    user = await db.create_user(
+    user = db.create_user(
         telegram_id=message.from_user.id,
         username=message.from_user.username or f"user_{message.from_user.id}",
         full_name=data['full_name'],
@@ -153,7 +153,7 @@ async def process_client_goal(message: Message, state: FSMContext):
         return
     
     data = await state.get_data()
-    user = await db.create_user(
+    user = db.create_user(
         telegram_id=message.from_user.id,
         username=message.from_user.username or f"user_{message.from_user.id}",
         full_name=data['full_name'],
