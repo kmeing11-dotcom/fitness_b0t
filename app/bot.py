@@ -1,3 +1,4 @@
+# bot.py
 import asyncio
 import sys
 from pathlib import Path
@@ -5,6 +6,7 @@ from aiohttp import web
 import os
 import signal
 
+# Добавляем путь к корню проекта
 sys.path.append(str(Path(__file__).parent.parent))
 
 from aiogram import Bot, Dispatcher
@@ -13,6 +15,7 @@ from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 
+# Прямые импорты, а не через app
 from app.config import Config
 from app.handlers import (
     start, client, measurements, stats,
