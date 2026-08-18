@@ -41,6 +41,7 @@ class User(Base):
     client_trainers = relationship("TrainerClient", foreign_keys="TrainerClient.client_id", back_populates="client")
     measurements = relationship("Measurement", back_populates="user")
     reminders = relationship("Reminder", back_populates="trainer")
+    subscription = relationship("Subscription", back_populates="user", uselist=False)
 
 
 class TrainerClient(Base):
