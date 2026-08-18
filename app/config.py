@@ -20,4 +20,13 @@ class Config:
 
     @classmethod
     def ensure_temp_folder(cls):
-        Path(cls.TEMP_FOLDER).mkdir(parents=True, exist_ok=True)
+        """Создаёт временную папку в корне проекта, не падая, если она уже есть"""
+        from pathlib import Path
+        
+        # Строим путь от корня проекта, а не от текущей папки
+        base = Path(__file__).parent.parent  # поднимаемся из app/ в корень fitness_bot
+        temp_path = base / "temp"
+        
+        # Создаём папку, игнорируя существование
+        temp_path.mkdir(parents=True, exist_ok=True)
+        cls.TEMP_FOLDER = str(temp_path)   # переопределяем переменную на реальный путь
