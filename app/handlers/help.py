@@ -10,7 +10,7 @@ db = DatabaseService()
 
 @router.message(Command("help"))
 async def cmd_help(message: Message):
-    user = await db.get_user(message.from_user.id)
+    user = db.get_user(message.from_user.id)
 
     if not user:
         await message.answer(
