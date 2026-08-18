@@ -170,7 +170,7 @@ async def view_client_chart(callback: CallbackQuery, client_id: int):
         return
 
     chart_service = ChartService()
-    chart_path = chart_service.generate_stats_chart(client_id, measurements)
+    chart_path = await chart_service.generate_stats_chart(client_id, measurements)
 
     if chart_path:
         await callback.message.answer_document(
@@ -193,10 +193,10 @@ async def generate_client_report(callback: CallbackQuery, client_id: int):
     measurements = db.get_measurements(client_id, days=28)
 
     chart_service = ChartService()
-    chart_path = chart_service.generate_report_chart(client_id, measurements)
+    chart_path = await chart_service.generate_report_chart(client_id, measurements)
 
     pdf_service = PDFService()
-    pdf_path = pdf_service.generate_client_report(
+    pdf_path = await pdf_service.generate_client_report(
         client_id, client, measurements, chart_path
     )
 
@@ -303,10 +303,10 @@ async def report_command(message: Message):
     from app.services.chart_service import ChartService
 
     chart_service = ChartService()
-    chart_path = chart_service.generate_report_chart(client.id, measurements)
+    chart_path = await chart_service.generate_report_chart(client.id, measurements)
 
     pdf_service = PDFService()
-    pdf_path = pdf_service.generate_client_report(
+    pdf_path = await pdf_service.generate_client_report(
         client.id, client, measurements, chart_path
     )
 
