@@ -1,18 +1,15 @@
-from aiogram import Router, F
+from aiogram import Router
 from aiogram.types import Message
 from aiogram.filters import Command
 from app.config import Config
 from app.services.db_service import DatabaseService
 from app.models import UserRole
-import asyncio
 
 router = Router()
 db = DatabaseService()
 
-
 def is_admin(user_id: int) -> bool:
     return user_id == Config.ADMIN_TELEGRAM_ID
-
 
 @router.message(Command("admin_stats"))
 async def admin_stats(message: Message):
@@ -32,7 +29,6 @@ async def admin_stats(message: Message):
         f"👥 Всего пользователей: {len(trainers) + len(clients)}"
     )
     await message.answer(response)
-
 
 @router.message(Command("set_trial"))
 async def set_trial(message: Message):
@@ -64,7 +60,6 @@ async def set_trial(message: Message):
     await message.answer(
         f"✅ Пользователю @{username} выдан пробный период на {days} дней (Pro)."
     )
-
 
 @router.message(Command("cancel_subscription"))
 async def cancel_subscription(message: Message):
