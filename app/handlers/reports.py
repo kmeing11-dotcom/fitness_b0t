@@ -25,9 +25,6 @@ chart_service = ChartService()
 
 @router.message(Command("report"))
 async def report_command(message: Message):
-    """
-    Команда /report @username — генерация PDF-отчёта для ученика (тренер).
-    """
     try:
         user = db.get_user_by_telegram(message.from_user.id)
         if not user:
@@ -83,9 +80,6 @@ async def report_command(message: Message):
 
 @router.message(Command("my_report"))
 async def my_report_command(message: Message):
-    """
-    Команда /my_report — генерация собственного отчёта (ученик).
-    """
     try:
         user = db.get_user_by_telegram(message.from_user.id)
         if not user:
@@ -109,10 +103,6 @@ async def my_report_command(message: Message):
 
 @router.callback_query(F.data.startswith("report_select_"))
 async def report_select_client(callback: CallbackQuery):
-    """
-    Выбор клиента для отчёта из списка.
-    Callback: report_select_{client_id}
-    """
     try:
         client_id = int(callback.data.split("_")[2])
         client = db.get_user(client_id)
@@ -148,10 +138,6 @@ async def report_select_client(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("report_pdf_"))
 async def report_pdf_callback(callback: CallbackQuery):
-    """
-    Генерация PDF-отчёта для ученика (для ученика).
-    Callback: report_pdf_{client_id}
-    """
     try:
         client_id = int(callback.data.split("_")[2])
         client = db.get_user(client_id)
@@ -180,9 +166,6 @@ async def report_pdf_callback(callback: CallbackQuery):
 # ============================================================
 
 async def generate_report(message: Message, client):
-    """
-    Генерирует PDF-отчёт и отправляет пользователю.
-    """
     try:
         measurements = db.get_measurements(client.id, days=90)
 
@@ -257,7 +240,6 @@ async def generate_report(message: Message, client):
 
 @router.message(Command("report_help"))
 async def report_help(message: Message):
-    """Помощь по командам отчётов."""
     user = db.get_user_by_telegram(message.from_user.id)
     if not user:
         await message.answer("❌ Вы не зарегистрированы. Используйте /start.")
