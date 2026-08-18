@@ -22,82 +22,68 @@ async def admin_stats(message: Message):
 
     trainers = db.get_users_by_role(UserRole.TRAINER)
     clients = db.get_users_by_role(UserRole.CLIENT)
-    daily_measurements = db.get_daily_measurements_count()
+    subs = db.get_all_active_subscriptions()
 
     response = (
         "📊 Статистика системы:\n\n"
         f"👨‍🏫 Тренеры: {len(trainers)}\n"
         f"👨‍🎓 Ученики: {len(clients)}\n"
-        f"📝 Замеров за сегодня: {daily_measurements}\n"
+        f"💳 Активных подписок (Pro): {subs}\n"
         f"👥 Всего пользователей: {len(trainers) + len(clients)}"
     )
-
     await message.answer(response)
 
 
-_pending_broadcast = None
-
-
-@router.message(Command("broadcast"))
-async def broadcast_command(message: Message):
+@router.message(Command("set_trial"))
+async def set_trial(message: Message):
     if not is_admin(message.from_user.id):
         await message.answer("❌ Доступ запрещен.")
         return
 
-    args = message.text.split(maxsplit=1)
+    args = message.text.split()
+    if len(args) < 3:
+        await message.answer("❌ Использование: /set_trial @username 7 (дней)")
+        return
+
+    username = args[1].lstrip('@')
+    user = db.get_user_by_username(username)
+    if not user:
+        await message.answer(f"❌ Пользователь @{username} не найден.")
+        return
+
+    try:
+        days = int(args[2])
+        if days <= 0:
+            await message.answer("❌ Количество дней должно быть больше 0.")
+            return
+    except ValueError:
+        await message.answer("❌ Укажите количество дней числом.")
+        return
+
+    db.set_trial_subscription(user.id, days)
+    await message.answer(
+        f"✅ Пользователю @{username} выдан пробный период на {days} дней (Pro)."
+    )
+
+
+@router.message(Command("cancel_subscription"))
+async def cancel_subscription(message: Message):
+    if not is_admin(message.from_user.id):
+        await message.answer("❌ Доступ запрещен.")
+        return
+
+    args = message.text.split()
     if len(args) < 2:
-        await message.answer(
-            "📢 Использование: /broadcast Текст сообщения\n\n"
-            "Пример: /broadcast Дорогие пользователи! У нас обновление бота."
-        )
+        await message.answer("❌ Использование: /cancel_subscription @username")
         return
 
-    global _pending_broadcast
-    _pending_broadcast = args[1]
-
-    await message.answer(
-        f"📢 Вы собираетесь отправить рассылку всем пользователям:\n\n"
-        f"\"{_pending_broadcast}\"\n\n"
-        f"Подтвердите отправку: /confirm_broadcast"
-    )
-
-
-@router.message(Command("confirm_broadcast"))
-async def confirm_broadcast(message: Message):
-    if not is_admin(message.from_user.id):
-        await message.answer("❌ Доступ запрещен.")
+    username = args[1].lstrip('@')
+    user = db.get_user_by_username(username)
+    if not user:
+        await message.answer(f"❌ Пользователь @{username} не найден.")
         return
 
-    global _pending_broadcast
-    if not _pending_broadcast:
-        await message.answer("❌ Нет ожидающей рассылки. Сначала используйте /broadcast")
-        return
-
-    users = db.get_all_users()
-
-    sent_count = 0
-    failed_count = 0
-
-    for user in users:
-        try:
-            await message.bot.send_message(
-                chat_id=user.telegram_id,
-                text=f"📢 {_pending_broadcast}"
-            )
-            sent_count += 1
-            await asyncio.sleep(0.05)
-        except Exception as e:
-            failed_count += 1
-            print(f"Failed to send to {user.telegram_id}: {e}")
-
-    broadcast_id = db.broadcast_message(_pending_broadcast, message.from_user.id)
-    db.update_broadcast_count(broadcast_id, sent_count)
-
-    await message.answer(
-        f"✅ Рассылка завершена!\n\n"
-        f"Отправлено: {sent_count}\n"
-        f"Не отправлено: {failed_count}\n"
-        f"Всего пользователей: {len(users)}"
-    )
-
-    _pending_broadcast = None
+    if db.cancel_subscription(user.id):
+        await message.answer(f"✅ Подписка пользователя @{username} отключена.")
+    else:
+        await message.answer(f"❌ У пользователя @{username} не было активной подписки.")
