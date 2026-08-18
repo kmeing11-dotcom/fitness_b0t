@@ -36,17 +36,16 @@ class Database:
                 raise
         return cls._engine
 
-    @classmethod
-    def get_session_factory(cls):
-        """Возвращает фабрику сессий"""
-        if cls._session_factory is None:
-            cls._session_factory = sessionmaker(
-                bind=cls.get_engine(),
-                autoflush=False,
-                autocommit=False,
-                expire_on_commit=False,
-            )
-        return cls._session_factory
+ @classmethod
+def get_session_factory(cls):
+    if cls._session_factory is None:
+        cls._session_factory = sessionmaker(
+            bind=cls.get_engine(),
+            autoflush=False,
+            autocommit=False,
+            expire_on_commit=False,  # <-- ВАЖНО!
+        )
+    return cls._session_factory
 
     @classmethod
     def get_session(cls):
