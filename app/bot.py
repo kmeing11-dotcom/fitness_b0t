@@ -40,6 +40,9 @@ async def main():
     reminder_service = ReminderService(bot)
     Config.ensure_temp_folder()
 
+    # ✅ ЗАПУСКАЕМ ВЕБ-СЕРВЕР ДЛЯ RENDER (чтобы порт был открыт)
+    await start_web_server()
+
     logger.info("🚀 Bot started successfully")
 
     try:
@@ -51,10 +54,7 @@ async def main():
         await bot.session.close()
 
 
-if __name__ == "__main__":
-    asyncio.run(main())
-
-
+# ⚙️ Веб-сервер для Health Check (Render видит порт 10000)
 async def health_check(request):
     return web.Response(text="OK")
 
@@ -66,3 +66,7 @@ async def start_web_server():
     site = web.TCPSite(runner, host="0.0.0.0", port=10000)
     await site.start()
     print("✅ Health check server started on port 10000")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
