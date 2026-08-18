@@ -52,7 +52,7 @@ class DatabaseService:
                 User.is_active == True
             ).all()
 
-       def add_client_to_trainer(self, trainer_id, client_id):
+    def add_client_to_trainer(self, trainer_id, client_id):
         with self.Session() as session:
             # Ищем запись, даже если она неактивна
             existing = session.query(TrainerClient).filter_by(
