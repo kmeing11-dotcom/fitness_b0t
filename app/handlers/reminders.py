@@ -9,7 +9,7 @@ from app.services.reminder_service import ReminderService
 
 router = Router()
 db = DatabaseService()
-reminder_service = None  # Будет инициализирован в bot.py
+reminder_service = None
 
 
 class ReminderStates(StatesGroup):
@@ -19,7 +19,7 @@ class ReminderStates(StatesGroup):
 
 @router.message(Command("set_reminder"))
 async def set_reminder(message: Message, state: FSMContext):
-    user = await db.get_user(message.from_user.id)
+    user = db.get_user(message.from_user.id)
     if not user or user.role != "trainer":
         await message.answer("❌ Эта команда доступна только тренерам.")
         return
@@ -61,9 +61,9 @@ async def process_time_selection(message: Message, state: FSMContext):
         data = await state.get_data()
         day = data['day']
 
-        user = await db.get_user(message.from_user.id)
+        user = db.get_user(message.from_user.id)
 
-        reminder = await db.create_reminder(user.id, day, time_str)
+        reminder = db.create_reminder(user.id, day, time_str)
 
         global reminder_service
         if reminder_service:
@@ -84,14 +84,15 @@ async def process_time_selection(message: Message, state: FSMContext):
             "Пример: 10:00"
         )
 
+
 @router.message(Command("my_reminders"))
 async def my_reminders(message: Message):
-    user = await db.get_user(message.from_user.id)
+    user = db.get_user(message.from_user.id)
     if not user or user.role != "trainer":
         await message.answer("❌ Эта команда доступна только тренерам.")
         return
 
-    reminders = await db.get_trainer_reminders(user.id)
+    reminders = db.get_trainer_reminders(user.id)
 
     if not reminders:
         await message.answer(
@@ -109,7 +110,6 @@ async def my_reminders(message: Message):
     await message.answer(response)
 
 
-# Функция для инициализации reminder_service из bot.py
 def init_reminder_service(service):
     global reminder_service
     reminder_service = service
