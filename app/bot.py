@@ -11,7 +11,7 @@ from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 from app.config import Config
-from app.handlers import start, client, measurements, stats, reminders, admin, help, menu
+from app.handlers import start, client, measurements, stats, reminders, admin, help, menu, trainer
 from app.services.reminder_service import ReminderService
 from app.utils.logger import logger
 
@@ -36,6 +36,7 @@ async def main():
     dp.include_router(admin.router)
     dp.include_router(help.router)
     dp.include_router(menu.router)
+    dp.include_router(trainer.router)
 
     reminder_service = ReminderService(bot)
     Config.ensure_temp_folder()
