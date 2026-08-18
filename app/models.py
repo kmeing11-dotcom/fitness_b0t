@@ -109,3 +109,19 @@ class Broadcast(Base):
     recipients_count = Column(Integer, default=0)
 
     sender = relationship("User")
+
+class Subscription(Base):
+    __tablename__ = "subscriptions"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    plan = Column(String(20), nullable=False, default="free")  # free, pro
+    expires_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+    is_active = Column(Boolean, default=True)
+
+    user = relationship("User", back_populates="subscription")
+
+# Не забудь добавить в модель User обратную связь:
+# В классе User добавь строку:
+# subscription = relationship("Subscription", back_populates="user", uselist=False)
