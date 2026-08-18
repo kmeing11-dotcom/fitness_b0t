@@ -1,265 +1,344 @@
-import os
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, PageBreak
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import inch
-from reportlab.lib.enums import TA_CENTER
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+import numpy as np
 from datetime import datetime, timedelta
 from typing import List, Optional
 from pathlib import Path
+from io import BytesIO
 import logging
 
 from app.config import Config
-from app.models import User, Measurement
+from app.models import Measurement
 
 logger = logging.getLogger(__name__)
 
 
-class PDFService:
-    """Сервис для генерации PDF-отчётов"""
+class ChartService:
+    """Сервис для генерации графиков"""
+
+    COLORS = {
+        'weight': '#2E86C1',
+        'waist': '#28B463',
+        'hips': '#8E44AD',
+        'chest': '#D4AC0D',
+        'biceps': '#E67E22',
+        'trend': '#E74C3C',
+        'improvement': '#27AE60',
+        'decline': '#E74C3C',
+    }
 
     def __init__(self):
         Config.ensure_temp_folder()
         self.temp_folder = Path(Config.TEMP_FOLDER)
-        self.styles = getSampleStyleSheet()
-        self._create_custom_styles()
-        self._cleanup_old_pdfs()
+        self._setup_style()
+        self._cleanup_old_charts()
 
-    def _create_custom_styles(self):
-        """Создаёт кастомные стили для PDF"""
-        self.styles.add(ParagraphStyle(
-            name='CustomTitle',
-            parent=self.styles['Heading1'],
-            fontSize=20,
-            textColor=colors.HexColor('#2E4053'),
-            spaceAfter=30,
-            alignment=TA_CENTER,
-            fontName='Helvetica-Bold'
-        ))
+    def _setup_style(self):
+        """Настраивает стиль графиков"""
+        plt.style.use('seaborn-v0_8-darkgrid')
+        plt.rcParams['font.size'] = 10
+        plt.rcParams['figure.figsize'] = (12, 8)
+        plt.rcParams['axes.labelsize'] = 11
+        plt.rcParams['axes.titlesize'] = 13
+        plt.rcParams['legend.fontsize'] = 10
+        plt.rcParams['figure.titlesize'] = 14
 
-        self.styles.add(ParagraphStyle(
-            name='CustomHeading',
-            parent=self.styles['Heading2'],
-            fontSize=14,
-            textColor=colors.HexColor('#2E4053'),
-            spaceAfter=12,
-            spaceBefore=10,
-            fontName='Helvetica-Bold'
-        ))
-
-        self.styles.add(ParagraphStyle(
-            name='CustomNormal',
-            parent=self.styles['Normal'],
-            fontSize=10,
-            spaceAfter=6,
-            fontName='Helvetica'
-        ))
-
-        self.styles.add(ParagraphStyle(
-            name='CustomSmall',
-            parent=self.styles['Normal'],
-            fontSize=8,
-            textColor=colors.HexColor('#7F8C8D'),
-            spaceAfter=4,
-            fontName='Helvetica'
-        ))
-
-    def _cleanup_old_pdfs(self, days: int = 7):
-        """Удаляет PDF-файлы старше указанного количества дней."""
+    def _cleanup_old_charts(self, days: int = 7):
+        """Удаляет старые графики"""
         try:
-            cutoff_time = datetime.now() - timedelta(days=days)
-            for pdf_file in self.temp_folder.glob("report_*.pdf"):
-                try:
-                    file_mtime = datetime.fromtimestamp(pdf_file.stat().st_mtime)
-                    if file_mtime < cutoff_time:
-                        pdf_file.unlink()
-                except Exception as e:
-                    logger.warning(f"Could not remove old PDF {pdf_file.name}: {e}")
+            cutoff = datetime.now() - timedelta(days=days)
+            for chart_file in self.temp_folder.glob("stats_*.png"):
+                if datetime.fromtimestamp(chart_file.stat().st_mtime) < cutoff:
+                    chart_file.unlink()
+            for chart_file in self.temp_folder.glob("report_chart_*.png"):
+                if datetime.fromtimestamp(chart_file.stat().st_mtime) < cutoff:
+                    chart_file.unlink()
         except Exception as e:
-            logger.warning(f"Error during PDF cleanup: {e}")
+            logger.warning(f"Chart cleanup error: {e}")
 
-    async def generate_client_report(
-        self,
-        user_id: int,
-        client: User,
-        measurements: List[Measurement],
-        chart_path: Optional[str] = None
-    ) -> Optional[str]:
-        """Генерирует PDF-отчёт для клиента."""
-        filepath = self.temp_folder / f"report_{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+    def _sort_measurements(self, measurements: List[Measurement]) -> List[Measurement]:
+        return sorted(measurements, key=lambda m: m.measured_at)
+
+    def _get_measurement_arrays(self, measurements: List[Measurement]) -> dict:
+        sorted_measurements = self._sort_measurements(measurements)
+        dates = [m.measured_at for m in sorted_measurements]
+
+        return {
+            'dates': dates,
+            'weights': [m.weight for m in sorted_measurements if m.weight is not None],
+            'waists': [m.waist for m in sorted_measurements if m.waist is not None],
+            'hips': [m.hips for m in sorted_measurements if m.hips is not None],
+            'chests': [m.chest for m in sorted_measurements if m.chest is not None],
+            'biceps': [m.biceps for m in sorted_measurements if m.biceps is not None],
+            'measurements': sorted_measurements
+        }
+
+    async def generate_stats_chart(self, user_id: int, measurements: List[Measurement]) -> Optional[str]:
+        if not measurements:
+            logger.warning(f"No measurements for user {user_id}")
+            return None
 
         try:
-            doc = SimpleDocTemplate(
-                str(filepath),
-                pagesize=A4,
-                rightMargin=72,
-                leftMargin=72,
-                topMargin=72,
-                bottomMargin=72,
-                title=f"Fitness Report - {client.full_name or 'Client'}",
-                author="Fitness Bot"
-            )
+            data = self._get_measurement_arrays(measurements)
+            dates = data['dates']
 
-            story = []
+            fig, axes = plt.subplots(3, 1, figsize=(12, 14))
+            ax1, ax2, ax3 = axes
 
-            # Заголовок
-            story.append(Paragraph("📊 Отчёт о прогрессе", self.styles['CustomTitle']))
-            story.append(Spacer(1, 0.25 * inch))
-
-            # Информация о клиенте
-            story.append(Paragraph("Информация о клиенте", self.styles['CustomHeading']))
-            story.append(Spacer(1, 0.1 * inch))
-
-            goal_map = {
-                "weight_loss": "Похудение",
-                "muscle_gain": "Набор массы",
-                "maintain": "Поддержание"
-            }
-
-            info_data = [
-                ["Имя:", client.full_name or "Не указано"],
-                ["Возраст:", str(client.age) if client.age else "Не указан"],
-                ["Рост:", f"{client.height} см" if client.height else "Не указан"],
-                ["Цель:", goal_map.get(client.goal, client.goal or "Не указана")],
-                ["Дата отчёта:", datetime.now().strftime("%d.%m.%Y %H:%M")],
-                ["Кол-во замеров:", str(len(measurements))]
-            ]
-
-            info_table = Table(info_data, colWidths=[2 * inch, 3.5 * inch])
-            info_table.setStyle(TableStyle([
-                ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
-                ('FONTSIZE', (0, 0), (-1, -1), 10),
-                ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#EBF5FB')),
-                ('TEXTCOLOR', (0, 0), (0, -1), colors.HexColor('#2E4053')),
-                ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
-                ('ALIGN', (1, 0), (1, -1), 'LEFT'),
-                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#D5D8DC')),
-                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                ('PADDING', (0, 0), (-1, -1), 6),
-            ]))
-            story.append(info_table)
-            story.append(Spacer(1, 0.3 * inch))
-
-            # Таблица замеров
-            story.append(Paragraph("Замеры (последние 4 недели)", self.styles['CustomHeading']))
-            story.append(Spacer(1, 0.1 * inch))
-
-            if measurements:
-                sorted_measurements = sorted(measurements, key=lambda m: m.measured_at, reverse=True)
-                recent_measurements = sorted_measurements[:14]
-
-                table_data = [["Дата", "Вес (кг)", "Талия (см)", "Бёдра (см)", "Грудь (см)", "Бицепс (см)"]]
-
-                for m in recent_measurements:
-                    table_data.append([
-                        m.measured_at.strftime("%d.%m.%Y"),
-                        f"{m.weight:.1f}" if m.weight else "—",
-                        f"{m.waist:.1f}" if m.waist else "—",
-                        f"{m.hips:.1f}" if m.hips else "—",
-                        f"{m.chest:.1f}" if m.chest else "—",
-                        f"{m.biceps:.1f}" if m.biceps else "—"
-                    ])
-
-                col_widths = [1.2 * inch, 1.0 * inch, 1.0 * inch, 1.0 * inch, 1.0 * inch, 1.0 * inch]
-                measure_table = Table(table_data, colWidths=col_widths, repeatRows=1)
-                measure_table.setStyle(TableStyle([
-                    ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
-                    ('FONTSIZE', (0, 0), (-1, -1), 8),
-                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2E4053')),
-                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                    ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#D5D8DC')),
-                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                    ('PADDING', (0, 0), (-1, -1), 4),
-                    ('FONTSIZE', (0, 1), (-1, -1), 7),
-                ]))
-                story.append(measure_table)
-
-                if len(measurements) > 14:
-                    story.append(Paragraph(
-                        f"Показаны последние 14 замеров из {len(measurements)}",
-                        self.styles['CustomSmall']
-                    ))
-                story.append(Spacer(1, 0.3 * inch))
+            if data['weights']:
+                self._plot_weight_chart(ax1, dates, data['weights'])
             else:
-                story.append(Paragraph(
-                    "Нет записей замеров. Начните отслеживать прогресс.",
-                    self.styles['CustomNormal']
-                ))
-                story.append(Spacer(1, 0.3 * inch))
+                ax1.text(0.5, 0.5, 'Нет данных о весе', ha='center', va='center', transform=ax1.transAxes, fontsize=14)
+                ax1.set_title('Динамика веса', fontsize=14, fontweight='bold')
 
-            # График
-            if chart_path and Path(chart_path).exists():
-                story.append(PageBreak())
-                story.append(Paragraph("График прогресса", self.styles['CustomHeading']))
-                story.append(Spacer(1, 0.1 * inch))
+            has_body_measurements = any([data['waists'], data['hips'], data['chests'], data['biceps']])
+            if has_body_measurements:
+                self._plot_body_measurements(ax2, dates, data)
+            else:
+                ax2.text(0.5, 0.5, 'Нет данных об объёмах', ha='center', va='center', transform=ax2.transAxes, fontsize=14)
+                ax2.set_title('Динамика объёмов', fontsize=14, fontweight='bold')
 
-                try:
-                    img = Image(chart_path, width=6 * inch, height=3.5 * inch)
-                    story.append(img)
-                    story.append(Spacer(1, 0.3 * inch))
-                except Exception as e:
-                    logger.error(f"Failed to add chart to PDF: {e}")
+            if len(measurements) >= 2:
+                self._plot_changes(ax3, data['measurements'])
+            else:
+                ax3.text(0.5, 0.5, 'Недостаточно данных для анализа изменений\n(нужно минимум 2 замера)',
+                        ha='center', va='center', transform=ax3.transAxes, fontsize=12)
+                ax3.set_title('Изменения за период', fontsize=14, fontweight='bold')
 
-            # Сводка прогресса
-            if measurements:
-                story.append(PageBreak())
-                story.append(Paragraph("Сводка прогресса", self.styles['CustomHeading']))
-                story.append(Spacer(1, 0.1 * inch))
+            for ax in axes:
+                ax.xaxis.set_major_formatter(mdates.DateFormatter('%d.%m'))
+                if len(dates) > 1:
+                    interval = max(1, len(dates) // 7)
+                    ax.xaxis.set_major_locator(mdates.DayLocator(interval=interval))
+                plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
+                ax.grid(True, alpha=0.3)
 
-                sorted_by_date = sorted(measurements, key=lambda m: m.measured_at)
+            plt.tight_layout()
 
-                if len(sorted_by_date) >= 2:
-                    first = sorted_by_date[0]
-                    last = sorted_by_date[-1]
+            filepath = self.temp_folder / f"stats_{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+            plt.savefig(filepath, dpi=150, bbox_inches='tight', facecolor='white')
+            plt.close()
 
-                    summary_parts = []
-
-                    if first.weight and last.weight:
-                        weight_change = last.weight - first.weight
-                        if weight_change < 0:
-                            summary_parts.append(f"✅ Потеря веса: {abs(weight_change):.1f} кг")
-                        elif weight_change > 0:
-                            summary_parts.append(f"⚠️ Увеличение веса: {weight_change:.1f} кг")
-                        else:
-                            summary_parts.append("➖ Вес стабилен")
-
-                    if first.waist and last.waist:
-                        waist_change = last.waist - first.waist
-                        if waist_change < 0:
-                            summary_parts.append(f"✅ Уменьшение талии: {abs(waist_change):.1f} см")
-                        elif waist_change > 0:
-                            summary_parts.append(f"⚠️ Увеличение талии: {waist_change:.1f} см")
-                        else:
-                            summary_parts.append("➖ Талия стабильна")
-
-                    if summary_parts:
-                        for part in summary_parts:
-                            story.append(Paragraph(part, self.styles['CustomNormal']))
-                    else:
-                        story.append(Paragraph(
-                            "Недостаточно данных для анализа прогресса",
-                            self.styles['CustomNormal']
-                        ))
-                else:
-                    story.append(Paragraph(
-                        "Недостаточно замеров для анализа прогресса (нужно минимум 2 замера)",
-                        self.styles['CustomNormal']
-                    ))
-
-            # Футер
-            story.append(Spacer(1, 0.5 * inch))
-            story.append(Paragraph(
-                f"Отчёт сгенерирован автоматически {datetime.now().strftime('%d.%m.%Y %H:%M')}",
-                self.styles['CustomSmall']
-            ))
-
-            doc.build(story)
-
-            logger.info(f"✅ PDF report generated: {filepath}")
+            logger.info(f"✅ Chart generated: {filepath}")
             return str(filepath)
 
         except Exception as e:
-            logger.error(f"❌ Failed to generate PDF: {e}")
+            logger.error(f"❌ Failed to generate chart: {e}")
+            plt.close()
+            return None
+
+    def _plot_weight_chart(self, ax, dates, weights):
+        ax.plot(dates, weights, 'o-', color=self.COLORS['weight'], linewidth=2.5, markersize=8, label='Вес (кг)')
+        ax.set_title('Динамика веса', fontsize=14, fontweight='bold')
+        ax.set_ylabel('Вес (кг)')
+        ax.legend(loc='upper right')
+
+        if len(weights) > 2:
+            x = np.arange(len(weights))
+            z = np.polyfit(x, weights, 1)
+            p = np.poly1d(z)
+            trend = p(x)
+            ax.plot(dates, trend, '--', color=self.COLORS['trend'], alpha=0.7, label='Тренд', linewidth=2)
+            ax.legend(loc='upper right')
+
+    def _plot_body_measurements(self, ax, dates, data):
+        measurements_to_plot = [
+            (data['waists'], 'Талия (см)', self.COLORS['waist']),
+            (data['hips'], 'Бёдра (см)', self.COLORS['hips']),
+            (data['chests'], 'Грудь (см)', self.COLORS['chest']),
+            (data['biceps'], 'Бицепс (см)', self.COLORS['biceps']),
+        ]
+
+        for values, label, color in measurements_to_plot:
+            if values:
+                ax.plot(dates, values, 'o-', color=color, linewidth=2, markersize=6, label=label)
+
+        ax.set_title('Динамика объёмов', fontsize=14, fontweight='bold')
+        ax.set_ylabel('Объём (см)')
+        ax.legend(loc='upper right')
+
+    def _plot_changes(self, ax, measurements):
+        first = measurements[0]
+        last = measurements[-1]
+
+        changes = []
+        labels = []
+        colors = []
+
+        measurement_fields = [
+            ('weight', 'Вес (кг)', 1),
+            ('waist', 'Талия (см)', 1),
+            ('hips', 'Бёдра (см)', 1),
+            ('chest', 'Грудь (см)', 1),
+            ('biceps', 'Бицепс (см)', 1),
+        ]
+
+        for field, label, _ in measurement_fields:
+            first_val = getattr(first, field)
+            last_val = getattr(last, field)
+
+            if first_val is not None and last_val is not None:
+                change = last_val - first_val
+                changes.append(change)
+                labels.append(label)
+
+                if field in ['weight', 'waist']:
+                    colors.append(self.COLORS['improvement'] if change < 0 else self.COLORS['decline'])
+                else:
+                    colors.append(self.COLORS['improvement'] if change > 0 else self.COLORS['decline'])
+
+        if changes:
+            bars = ax.bar(labels, changes, color=colors, alpha=0.8, edgecolor='black', linewidth=0.5)
+            ax.axhline(y=0, color='black', linestyle='-', linewidth=1)
+            ax.set_title('Изменения за период', fontsize=14, fontweight='bold')
+            ax.set_ylabel('Изменение')
+
+            for bar, val in zip(bars, changes):
+                height = bar.get_height()
+                ax.text(
+                    bar.get_x() + bar.get_width() / 2.,
+                    height if height > 0 else height - max(0.5, abs(height) * 0.15),
+                    f'{val:+.1f}',
+                    ha='center',
+                    va='bottom' if height > 0 else 'top',
+                    fontsize=10,
+                    fontweight='bold'
+                )
+
+            max_change = max(abs(c) for c in changes) if changes else 1
+            ax.set_ylim(-max_change * 1.3, max_change * 1.3)
+
+    async def generate_stats_chart_bytes(self, user_id: int, measurements: List[Measurement]) -> Optional[bytes]:
+        if not measurements:
+            return None
+
+        try:
+            data = self._get_measurement_arrays(measurements)
+            dates = data['dates']
+
+            fig, axes = plt.subplots(2, 1, figsize=(10, 10))
+            ax1, ax2 = axes
+
+            if data['weights']:
+                self._plot_weight_chart(ax1, dates, data['weights'])
+            else:
+                ax1.text(0.5, 0.5, 'Нет данных', ha='center', va='center', transform=ax1.transAxes)
+                ax1.set_title('Динамика веса', fontsize=14, fontweight='bold')
+
+            has_body = any([data['waists'], data['hips'], data['chests'], data['biceps']])
+            if has_body:
+                self._plot_body_measurements(ax2, dates, data)
+            else:
+                ax2.text(0.5, 0.5, 'Нет данных', ha='center', va='center', transform=ax2.transAxes)
+                ax2.set_title('Динамика объёмов', fontsize=14, fontweight='bold')
+
+            for ax in axes:
+                ax.xaxis.set_major_formatter(mdates.DateFormatter('%d.%m'))
+                if len(dates) > 1:
+                    interval = max(1, len(dates) // 7)
+                    ax.xaxis.set_major_locator(mdates.DayLocator(interval=interval))
+                plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
+                ax.grid(True, alpha=0.3)
+
+            plt.tight_layout()
+
+            buf = BytesIO()
+            plt.savefig(buf, format='png', dpi=150, bbox_inches='tight', facecolor='white')
+            plt.close()
+            buf.seek(0)
+
+            return buf.read()
+
+        except Exception as e:
+            logger.error(f"❌ Failed to generate chart bytes: {e}")
+            plt.close()
+            return None
+
+    async def generate_report_chart(self, user_id: int, measurements: List[Measurement]) -> Optional[str]:
+        if not measurements:
+            return None
+
+        try:
+            data = self._get_measurement_arrays(measurements)
+            dates = data['dates']
+            weights = data['weights']
+
+            fig, ax = plt.subplots(figsize=(10, 6))
+
+            if weights:
+                ax.plot(dates, weights, 'o-', color=self.COLORS['weight'], linewidth=2.5, markersize=8)
+                ax.set_title('Динамика веса', fontsize=14, fontweight='bold')
+                ax.set_xlabel('Дата')
+                ax.set_ylabel('Вес (кг)')
+                ax.grid(True, alpha=0.3)
+
+                if len(weights) > 2:
+                    x = np.arange(len(weights))
+                    z = np.polyfit(x, weights, 1)
+                    p = np.poly1d(z)
+                    trend = p(x)
+                    ax.plot(dates, trend, '--', color=self.COLORS['trend'], alpha=0.7, label='Тренд')
+                    ax.legend()
+
+                ax.xaxis.set_major_formatter(mdates.DateFormatter('%d.%m'))
+                if len(dates) > 1:
+                    interval = max(1, len(dates) // 5)
+                    ax.xaxis.set_major_locator(mdates.DayLocator(interval=interval))
+                plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
+            else:
+                ax.text(0.5, 0.5, 'Нет данных о весе', ha='center', va='center', transform=ax.transAxes, fontsize=14)
+
+            plt.tight_layout()
+
+            filepath = self.temp_folder / f"report_chart_{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+            plt.savefig(filepath, dpi=120, bbox_inches='tight', facecolor='white')
+            plt.close()
+
+            return str(filepath)
+
+        except Exception as e:
+            logger.error(f"❌ Failed to generate report chart: {e}")
+            plt.close()
+            return None
+
+    async def generate_simple_chart(self, measurements: List[Measurement]) -> Optional[bytes]:
+        if not measurements:
+            return None
+
+        try:
+            data = self._get_measurement_arrays(measurements)
+            dates = data['dates']
+            weights = data['weights']
+
+            fig, ax = plt.subplots(figsize=(8, 5))
+
+            if weights:
+                ax.plot(dates, weights, 'o-', color=self.COLORS['weight'], linewidth=2.5, markersize=8)
+                ax.set_title('Прогресс веса', fontsize=14, fontweight='bold')
+                ax.set_xlabel('Дата')
+                ax.set_ylabel('Вес (кг)')
+                ax.grid(True, alpha=0.3)
+
+                ax.xaxis.set_major_formatter(mdates.DateFormatter('%d.%m'))
+                if len(dates) > 1:
+                    interval = max(1, len(dates) // 5)
+                    ax.xaxis.set_major_locator(mdates.DayLocator(interval=interval))
+                plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
+            else:
+                ax.text(0.5, 0.5, 'Нет данных', ha='center', va='center', transform=ax.transAxes, fontsize=14)
+
+            plt.tight_layout()
+
+            buf = BytesIO()
+            plt.savefig(buf, format='png', dpi=120, bbox_inches='tight', facecolor='white')
+            plt.close()
+            buf.seek(0)
+
+            return buf.read()
+
+        except Exception as e:
+            logger.error(f"❌ Failed to generate simple chart: {e}")
+            plt.close()
             return None
