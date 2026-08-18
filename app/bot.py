@@ -14,11 +14,14 @@ from app.config import Config
 from app.handlers import start, client, measurements, stats, reminders, admin, help, menu, trainer
 from app.services.reminder_service import ReminderService
 from app.utils.logger import logger
+from app.db import init_db  # <--- ДОБАВИЛ ИМПОРТ
 
 
 async def main():
     # БЕЗ ПРОКСИ! Просто используем VPN
     session = AiohttpSession(timeout=120)
+
+    init_db()  # <--- ДОБАВИЛ ВЫЗОВ (создаёт таблицы)
 
     bot = Bot(
         token=Config.BOT_TOKEN,
