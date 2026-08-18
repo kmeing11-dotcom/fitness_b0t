@@ -89,4 +89,4 @@ async def show_client_stats(callback: CallbackQuery):
     except Exception as e:
         await callback.message.answer(f"❌ Критическая ошибка: {e}")
         print(f"ERROR in show_client_stats: {traceback.format_exc()}")
-        await callback.answer()м
+        await callback.answer()
