@@ -52,10 +52,24 @@ class DatabaseService:
                 User.is_active == True
             ).all()
 
-    def add_client_to_trainer(self, trainer_id, client_id):
+       def add_client_to_trainer(self, trainer_id, client_id):
         with self.Session() as session:
-            if session.query(TrainerClient).filter_by(trainer_id=trainer_id, client_id=client_id).first():
+            # Ищем запись, даже если она неактивна
+            existing = session.query(TrainerClient).filter_by(
+                trainer_id=trainer_id, 
+                client_id=client_id
+            ).first()
+            
+            if existing:
+                # Если запись есть, но неактивна — просто делаем её активной
+                if not existing.is_active:
+                    existing.is_active = True
+                    session.commit()
+                    return True
+                # Если активна — значит, уже ученик
                 return False
+            
+            # Если записи нет — создаём новую
             tc = TrainerClient(trainer_id=trainer_id, client_id=client_id)
             session.add(tc)
             session.commit()
