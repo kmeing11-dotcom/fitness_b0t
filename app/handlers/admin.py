@@ -20,9 +20,9 @@ async def admin_stats(message: Message):
         await message.answer("❌ Доступ запрещен.")
         return
 
-    trainers = await db.get_users_by_role(UserRole.TRAINER)
-    clients = await db.get_users_by_role(UserRole.CLIENT)
-    daily_measurements = await db.get_daily_measurements_count()
+    trainers = db.get_users_by_role(UserRole.TRAINER)
+    clients = db.get_users_by_role(UserRole.CLIENT)
+    daily_measurements = db.get_daily_measurements_count()
 
     response = (
         "📊 Статистика системы:\n\n"
@@ -73,7 +73,7 @@ async def confirm_broadcast(message: Message):
         await message.answer("❌ Нет ожидающей рассылки. Сначала используйте /broadcast")
         return
 
-    users = await db.get_all_users()
+    users = db.get_all_users()
 
     sent_count = 0
     failed_count = 0
@@ -90,8 +90,8 @@ async def confirm_broadcast(message: Message):
             failed_count += 1
             print(f"Failed to send to {user.telegram_id}: {e}")
 
-    broadcast_id = await db.broadcast_message(_pending_broadcast, message.from_user.id)
-    await db.update_broadcast_count(broadcast_id, sent_count)
+    broadcast_id = db.broadcast_message(_pending_broadcast, message.from_user.id)
+    db.update_broadcast_count(broadcast_id, sent_count)
 
     await message.answer(
         f"✅ Рассылка завершена!\n\n"
