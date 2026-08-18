@@ -536,3 +536,116 @@ async def confirm_delete_client(callback: CallbackQuery, client_id: int):
     keyboard = get_confirm_delete_keyboard(client_id)
 
     await callback.message.edit_text(
+        text,
+        parse_mode=ParseMode.HTML,
+        reply_markup=keyboard
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("confirm_delete_"))
+async def delete_client_confirm(callback: CallbackQuery):
+    try:
+        client_id = int(callback.data.split("_")[2])
+
+        user = db.get_user_by_telegram(callback.from_user.id)
+        if not user:
+            await callback.answer("❌ Ошибка аутентификации.", show_alert=True)
+            return
+
+        client = db.get_user(client_id)
+        if not client:
+            await callback.message.edit_text(
+                "❌ Ученик не найден.",
+                reply_markup=get_back_keyboard()
+            )
+            await callback.answer()
+            return
+
+        clients = db.get_trainer_clients(user.id)
+        if client.id not in [c.id for c in clients]:
+            await callback.answer("❌ Это не ваш ученик.", show_alert=True)
+            return
+
+        db.remove_client_from_trainer(user.id, client_id)
+
+        await callback.message.edit_text(
+            f"✅ Ученик <b>{client.full_name}</b> удалён из вашего списка.",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_back_keyboard()
+        )
+
+        try:
+            await callback.bot.send_message(
+                chat_id=client.telegram_id,
+                text=f"ℹ️ Тренер <b>{user.full_name}</b> удалил вас из списка учеников."
+            )
+        except Exception as e:
+            logger.warning(f"Could not notify client {client_id}: {e}")
+
+        logger.info(f"🗑️ Trainer {user.id} deleted client {client_id}")
+        await callback.answer()
+
+    except ValueError:
+        await callback.answer("❌ Неверный формат данных", show_alert=True)
+    except Exception as e:
+        logger.error(f"Error in delete_client_confirm: {e}")
+        await callback.answer("❌ Ошибка при удалении", show_alert=True)
+
+
+# ============================================================
+#  КОМАНДА /delete_client
+# ============================================================
+
+@router.message(Command("delete_client"))
+async def delete_client(message: Message):
+    try:
+        user = db.get_user_by_telegram(message.from_user.id)
+        if not user or user.role != UserRole.TRAINER:
+            await message.answer("❌ Эта команда доступна только тренерам.")
+            return
+
+        args = message.text.split()
+        if len(args) < 2:
+            await message.answer(
+                "❌ <b>Использование:</b> /delete_client @username\n\n"
+                "📌 <b>Пример:</b> /delete_client @john_doe",
+                parse_mode=ParseMode.HTML
+            )
+            return
+
+        username = args[1].lstrip('@')
+        client = db.get_user_by_username(username)
+
+        if not client:
+            await message.answer(f"❌ Пользователь @{username} не найден.")
+            return
+
+        clients = db.get_trainer_clients(user.id)
+        if client.id not in [c.id for c in clients]:
+            await message.answer(f"❌ @{username} не является вашим учеником.")
+            return
+
+        db.remove_client_from_trainer(user.id, client.id)
+
+        await message.answer(
+            f"✅ Ученик @{username} удалён из вашего списка.",
+            reply_markup=get_back_keyboard()
+        )
+
+        try:
+            await message.bot.send_message(
+                chat_id=client.telegram_id,
+                text=f"ℹ️ Тренер {user.full_name} удалил вас из списка учеников."
+            )
+        except Exception:
+            pass
+
+        logger.info(f"🗑️ Trainer {user.id} deleted client {client.id} via command")
+
+    except Exception as e:
+        logger.error(f"Error in delete_client: {e}")
+        await message.answer("❌ Ошибка при удалении ученика.")
+    keyboard = get_confirm_delete_keyboard(client_id)
+
+    await callback.message.edit_text(
