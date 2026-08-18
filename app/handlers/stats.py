@@ -11,12 +11,12 @@ db = DatabaseService()
 
 @router.message(Command("stats"))
 async def stats_command(message: Message):
-    user = await db.get_user(message.from_user.id)
+    user = db.get_user(message.from_user.id)
     if not user or user.role != "trainer":
         await message.answer("❌ Эта команда доступна только тренерам.")
         return
 
-    clients = await db.get_trainer_clients(user.id)
+    clients = db.get_trainer_clients(user.id)
 
     if not clients:
         await message.answer(
@@ -37,12 +37,12 @@ async def show_client_stats(callback: CallbackQuery):
     _, client_id = callback.data.split(":")
     client_id = int(client_id)
 
-    client = await db.get_user(client_id)
+    client = db.get_user(client_id)
     if not client:
         await callback.answer("❌ Ученик не найден.")
         return
 
-    measurements = await db.get_measurements(client_id, days=30)
+    measurements = db.get_measurements(client_id, days=30)
 
     if len(measurements) < 2:
         await callback.message.answer(
@@ -52,7 +52,7 @@ async def show_client_stats(callback: CallbackQuery):
         return
 
     chart_service = ChartService()
-    chart_path = await chart_service.generate_stats_chart(client_id, measurements)
+    chart_path = chart_service.generate_stats_chart(client_id, measurements)
 
     if chart_path:
         await callback.message.answer_photo(
