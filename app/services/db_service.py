@@ -1,7 +1,7 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from app.config import Config
-from app.models import User, Measurement, TrainerClient, Reminder, ReminderLog, Broadcast, UserRole
+from app.models import User, Measurement, TrainerClient, Reminder, ReminderLog, Broadcast, UserRole, Subscription
 from datetime import datetime, timedelta
 
 class DatabaseService:
@@ -12,6 +12,7 @@ class DatabaseService:
         )
         self.Session = sessionmaker(bind=self.engine)
 
+    # ====================== USER ======================
     def get_user(self, telegram_id: int):
         with self.Session() as session:
             return session.query(User).filter(User.telegram_id == telegram_id).first()
@@ -22,12 +23,27 @@ class DatabaseService:
 
     def create_user(self, telegram_id, username, full_name, role, **kwargs):
         with self.Session() as session:
-            user = User(telegram_id=telegram_id, username=username, full_name=full_name, role=role, **kwargs)
+            user = User(
+                telegram_id=telegram_id,
+                username=username,
+                full_name=full_name,
+                role=role,
+                **kwargs
+            )
             session.add(user)
             session.commit()
             session.refresh(user)
             return user
 
+    def get_all_users(self):
+        with self.Session() as session:
+            return session.query(User).all()
+
+    def get_users_by_role(self, role):
+        with self.Session() as session:
+            return session.query(User).filter(User.role == role, User.is_active == True).all()
+
+    # ====================== CLIENTS ======================
     def get_trainer_clients(self, trainer_id: int):
         with self.Session() as session:
             return session.query(User).join(TrainerClient, User.id == TrainerClient.client_id).filter(
@@ -50,6 +66,7 @@ class DatabaseService:
             session.query(TrainerClient).filter_by(trainer_id=trainer_id, client_id=client_id).update({"is_active": False})
             session.commit()
 
+    # ====================== MEASUREMENTS ======================
     def create_measurement(self, user_id, data):
         with self.Session() as session:
             m = Measurement(user_id=user_id, **data)
@@ -66,14 +83,13 @@ class DatabaseService:
                 Measurement.measured_at >= cutoff
             ).order_by(Measurement.measured_at.asc()).all()
 
-    def get_all_users(self):
+    def get_last_measurement(self, user_id: int):
         with self.Session() as session:
-            return session.query(User).all()
+            return session.query(Measurement).filter(
+                Measurement.user_id == user_id
+            ).order_by(Measurement.measured_at.desc()).first()
 
-    def get_users_by_role(self, role):
-        with self.Session() as session:
-            return session.query(User).filter(User.role == role, User.is_active == True).all()
-
+    # ====================== REMINDERS ======================
     def create_reminder(self, trainer_id, day_of_week, time_str):
         from datetime import time
         t = datetime.strptime(time_str, "%H:%M").time()
@@ -87,3 +103,67 @@ class DatabaseService:
     def get_trainer_reminders(self, trainer_id):
         with self.Session() as session:
             return session.query(Reminder).filter_by(trainer_id=trainer_id, is_active=True).all()
+
+    # ====================== BROADCAST ======================
+    def broadcast_message(self, message: str, sender_id: int):
+        with self.Session() as session:
+            b = Broadcast(message=message, sent_by=sender_id, recipients_count=0)
+            session.add(b)
+            session.commit()
+            return b.id
+
+    def update_broadcast_count(self, broadcast_id: int, count: int):
+        with self.Session() as session:
+            session.query(Broadcast).filter(Broadcast.id == broadcast_id).update({"recipients_count": count})
+            session.commit()
+
+    # ====================== DAILY STATS ======================
+    def get_daily_measurements_count(self):
+        today = datetime.now().date()
+        with self.Session() as session:
+            return session.query(Measurement).filter(
+                Measurement.measured_at >= today
+            ).count()
+
+    # ====================== SUBSCRIPTIONS ======================
+    def get_user_subscription(self, user_id: int):
+        with self.Session() as session:
+            return session.query(Subscription).filter_by(user_id=user_id, is_active=True).first()
+
+    def set_trial_subscription(self, user_id: int, days: int = 7):
+        with self.Session() as session:
+            # Деактивируем старую подписку, если есть
+            old = session.query(Subscription).filter_by(user_id=user_id).first()
+            if old:
+                old.is_active = False
+            
+            expires_at = datetime.now() + timedelta(days=days)
+            sub = Subscription(
+                user_id=user_id,
+                plan="pro",
+                expires_at=expires_at,
+                is_active=True
+            )
+            session.add(sub)
+            session.commit()
+            return sub
+
+    def cancel_subscription(self, user_id: int):
+        with self.Session() as session:
+            sub = session.query(Subscription).filter_by(user_id=user_id, is_active=True).first()
+            if sub:
+                sub.is_active = False
+                session.commit()
+                return True
+            return False
+
+    def is_subscription_active(self, user_id: int) -> bool:
+        with self.Session() as session:
+            sub = session.query(Subscription).filter_by(user_id=user_id, is_active=True).first()
+            if not sub:
+                return False
+            return sub.expires_at > datetime.now()
+
+    def get_all_active_subscriptions(self):
+        with self.Session() as session:
+            return session.query(Subscription).filter_by(is_active=True).count()
