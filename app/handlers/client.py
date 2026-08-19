@@ -105,8 +105,13 @@ async def add_client(message: Message):
 @router.callback_query(F.data.startswith("accept_invite:"))
 async def accept_invite(callback: CallbackQuery):
     try:
-        _, trainer_id = callback.data.split(":")
-        trainer_id = int(trainer_id)
+        # Парсим trainer_id из формата "accept_invite:trainer_id"
+        parts = callback.data.split(":")
+        if len(parts) < 2:
+            await callback.answer("❌ Неверный формат данных", show_alert=True)
+            return
+
+        trainer_id = int(parts[1])
 
         client = db.get_user_by_telegram(callback.from_user.id)
         if not client:
@@ -168,7 +173,7 @@ async def accept_invite(callback: CallbackQuery):
         await callback.answer()
 
     except ValueError:
-        await callback.answer("❌ Неверный формат данных", show_alert=True)
+        await callback.answer("❌ Неверный ID", show_alert=True)
     except Exception as e:
         logger.error(f"Error in accept_invite: {e}")
         await callback.message.edit_text("❌ Ошибка при принятии приглашения.")
