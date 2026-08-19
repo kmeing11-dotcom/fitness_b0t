@@ -1,4 +1,3 @@
-# bot.py
 import asyncio
 import sys
 from pathlib import Path
@@ -6,7 +5,6 @@ from aiohttp import web
 import os
 import signal
 
-# Добавляем путь к корню проекта
 sys.path.append(str(Path(__file__).parent.parent))
 
 from aiogram import Bot, Dispatcher
@@ -15,7 +13,6 @@ from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 
-# Прямые импорты, а не через app
 from app.config import Config
 from app.handlers import (
     start, client, measurements, stats,
@@ -42,12 +39,17 @@ class FitnessBot:
 
     async def initialize(self):
         """Инициализация бота и всех компонентов"""
-        # Валидируем конфиг
         try:
             Config.validate()
         except ValueError as e:
             logger.error(f"❌ Configuration error: {e}")
             raise
+
+        # ⚠️ ВРЕМЕННО: Удаляем все таблицы
+        # !!! ВНИМАНИЕ: ЭТО УДАЛИТ ВСЕ ДАННЫЕ !!!
+        logger.warning("⚠️ DROPPING ALL TABLES! (временный шаг)")
+        Database.drop_db()
+        # ⚠️ УБЕРИ ЭТУ СТРОКУ ПОСЛЕ ПЕРЕСОЗДАНИЯ ТАБЛИЦ !!!
 
         # Инициализируем БД
         init_db()
@@ -73,7 +75,7 @@ class FitnessBot:
         # Создаём сервис напоминаний
         self.reminder_service = ReminderService(self.bot)
         await self.reminder_service.start()
-        init_reminder_service(self.reminder_service)  # <-- Инициализация в reminders
+        init_reminder_service(self.reminder_service)
         logger.info("✅ Reminder service created and started")
 
         # Создаём временную папку
@@ -132,7 +134,6 @@ class FitnessBot:
 
     async def start_background_tasks(self):
         """Запускает фоновые задачи"""
-        # Напоминания уже запущены через self.reminder_service.start()
         pass
 
     async def run(self):
@@ -140,12 +141,10 @@ class FitnessBot:
         try:
             self._running = True
 
-            # Запускаем health check сервер
             await self.start_web_server()
 
             logger.info("🚀 Bot started successfully!")
 
-            # Запускаем polling
             await self.dp.start_polling(
                 self.bot,
                 allowed_updates=["message", "callback_query", "my_chat_member"]
@@ -165,27 +164,22 @@ class FitnessBot:
         logger.info("🔄 Shutting down bot...")
         self._running = False
 
-        # Останавливаем polling
         if self.dp and self.bot:
             await self.dp.stop_polling()
             logger.info("✅ Polling stopped")
 
-        # Останавливаем reminder service
         if self.reminder_service:
             await self.reminder_service.stop()
             logger.info("✅ Reminder service stopped")
 
-        # Останавливаем веб-сервер
         if self.web_runner:
             await self.web_runner.cleanup()
             logger.info("✅ Web server stopped")
 
-        # Закрываем сессию бота
         if self.bot:
             await self.bot.session.close()
             logger.info("✅ Bot session closed")
 
-        # Закрываем сессии БД
         Database.close_session()
         logger.info("✅ Database sessions closed")
 
