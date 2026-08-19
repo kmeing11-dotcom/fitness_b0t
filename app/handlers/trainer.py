@@ -1,17 +1,17 @@
 from aiogram import Router, F
-from aiogram.types import CallbackQuery, Message, BufferedInputFile
+from aiogram.types import CallbackQuery, Message
 from aiogram.enums import ParseMode
 from app.services.db_service import DatabaseService
 from app.keyboards.inline import (
     get_client_actions_keyboard,
     get_back_keyboard,
     get_clients_list_keyboard,
-    get_confirm_delete_keyboard
+    get_confirm_delete_keyboard,
+    get_cancel_keyboard
 )
 from app.models import UserRole
 from app.utils.logger import get_logger
 import traceback
-from datetime import datetime
 
 logger = get_logger(__name__)
 router = Router()
@@ -249,8 +249,6 @@ async def prompt_message_to_client(callback: CallbackQuery):
 
         text = f"✏️ Напишите сообщение для <b>{client.full_name or client.username}</b>:\n\n"
         text += "<i>Сообщение будет отправлено в личные сообщения ученику.</i>"
-
-        from app.keyboards.inline import get_cancel_keyboard
 
         await callback.message.edit_text(
             text,
