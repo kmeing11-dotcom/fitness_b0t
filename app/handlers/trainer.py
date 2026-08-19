@@ -225,6 +225,11 @@ async def cancel_delete(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("msg_"))
 async def prompt_message_to_client(callback: CallbackQuery):
     try:
+        # Проверяем, что это не "msg_select"
+        if callback.data == "msg_select" or callback.data.startswith("msg_select_"):
+            await callback.answer("❌ Выберите ученика из списка.", show_alert=True)
+            return
+
         client_id = int(callback.data.split("_")[1])
         client = db.get_user(client_id)
 
@@ -253,8 +258,13 @@ async def prompt_message_to_client(callback: CallbackQuery):
             reply_markup=get_cancel_keyboard()
         )
 
+        # Сохраняем client_id в состоянии для дальнейшей обработки
+        # TODO: Добавить FSM для ожидания сообщения
+
         await callback.answer()
 
+    except ValueError:
+        await callback.answer("❌ Неверный ID", show_alert=True)
     except Exception as e:
         logger.error(f"Error in prompt_message_to_client: {e}")
         await callback.answer("❌ Ошибка", show_alert=True)
