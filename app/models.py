@@ -1,6 +1,6 @@
 from sqlalchemy import (
     Column, Integer, String, Float, DateTime, ForeignKey,
-    Boolean, Text, Time, Enum, UniqueConstraint, Index
+    Boolean, Text, Time, Enum, UniqueConstraint, Index, BigInteger  # <-- Добавлен BigInteger
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
@@ -30,10 +30,10 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True)
-    telegram_id = Column(Integer, unique=True, nullable=False, index=True)
+    telegram_id = Column(BigInteger, unique=True, nullable=False, index=True)  # <-- ИЗМЕНЕНО на BigInteger
     username = Column(String(100), unique=True, nullable=True)
     full_name = Column(String(200), nullable=True)
-    role = Column(Enum(UserRole, name="userrole"), nullable=False)  # <-- Добавлен name
+    role = Column(Enum(UserRole, name="userrole"), nullable=False)
 
     # Trainer fields
     phone = Column(String(20), nullable=True)
@@ -42,7 +42,7 @@ class User(Base):
     # Client fields
     age = Column(Integer, nullable=True)
     height = Column(Float, nullable=True)
-    goal = Column(Enum(Goal, name="goal"), nullable=True)  # <-- Добавлен name
+    goal = Column(Enum(Goal, name="goal"), nullable=True)
 
     created_at = Column(DateTime, server_default=func.now())
     is_active = Column(Boolean, default=True)
@@ -191,7 +191,7 @@ class Subscription(Base):
 
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
-    plan = Column(Enum(SubscriptionPlan, name="subscriptionplan"), nullable=False, default=SubscriptionPlan.FREE)  # <-- Добавлен name
+    plan = Column(Enum(SubscriptionPlan, name="subscriptionplan"), nullable=False, default=SubscriptionPlan.FREE)
     expires_at = Column(DateTime, nullable=False)
     created_at = Column(DateTime, server_default=func.now())
     is_active = Column(Boolean, default=True)
