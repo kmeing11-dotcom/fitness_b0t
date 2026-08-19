@@ -15,7 +15,7 @@ from app.keyboards.inline import (
 )
 from app.utils.logger import get_logger
 import traceback
-import sys
+import re
 
 logger = get_logger(__name__)
 router = Router()
@@ -72,9 +72,7 @@ async def cmd_start(message: Message, state: FSMContext):
     except Exception as e:
         error_text = f"❌ Ошибка в cmd_start: {e}\n{traceback.format_exc()}"
         logger.error(error_text)
-        # Отправляем детальную ошибку в Telegram (для отладки)
-        await message.answer(f"❌ Ошибка: {str(e)[:100]}")
-        raise  # Пробрасываем ошибку дальше, чтобы она попала в логи Render
+        await message.answer(f"❌ Ошибка: {str(e)[:200]}")
 
 
 # ============================================================
@@ -138,7 +136,6 @@ async def process_trainer_name(message: Message, state: FSMContext):
 async def process_trainer_phone(message: Message, state: FSMContext):
     try:
         phone = message.text.strip()
-        import re
         phone_clean = re.sub(r'[\s\-()]', '', phone)
         if not re.match(r'^\+?\d{10,15}$', phone_clean):
             await message.answer(
@@ -162,8 +159,13 @@ async def process_trainer_phone(message: Message, state: FSMContext):
 @router.message(StateFilter(RegistrationStates.trainer_studio))
 async def process_trainer_studio(message: Message, state: FSMContext):
     try:
+        logger.info(f"📝 Creating trainer profile for user {message.from_user.id}")
+
         data = await state.get_data()
         studio = message.text.strip()
+
+        logger.info(f"📝 Data: {data}")
+        logger.info(f"📝 Studio: {studio}")
 
         user = db.create_user(
             telegram_id=message.from_user.id,
@@ -173,6 +175,8 @@ async def process_trainer_studio(message: Message, state: FSMContext):
             phone=data.get('phone', ''),
             studio_name=studio if studio.lower() != 'нет' else None
         )
+
+        logger.info(f"✅ User created: {user}")
 
         if not user:
             await message.answer(
@@ -195,9 +199,10 @@ async def process_trainer_studio(message: Message, state: FSMContext):
         logger.info(f"✅ New trainer registered: {user.telegram_id} ({user.full_name})")
 
     except Exception as e:
-        logger.error(f"Error in process_trainer_studio: {e}\n{traceback.format_exc()}")
+        error_text = f"❌ Error in process_trainer_studio: {e}\n{traceback.format_exc()}"
+        logger.error(error_text)
         await message.answer(
-            "❌ Ошибка при создании профиля. Попробуйте позже.",
+            f"❌ Ошибка при создании профиля: {str(e)[:200]}",
             reply_markup=get_cancel_keyboard()
         )
         await state.clear()
@@ -312,26 +317,29 @@ async def _finish_client_registration(
     goal_text: str,
     callback: CallbackQuery = None
 ):
-    goal_map = {
-        "похудение": "weight_loss",
-        "набор": "muscle_gain",
-        "поддержание": "maintain",
-        "weight_loss": "weight_loss",
-        "muscle_gain": "muscle_gain",
-        "maintain": "maintain"
-    }
-
-    goal = goal_map.get(goal_text.lower())
-    if not goal:
-        await message.answer(
-            "❌ Пожалуйста, выберите одну из целей:\n"
-            "похудение, набор, поддержание",
-            reply_markup=get_goal_keyboard()
-        )
-        return
-
     try:
+        logger.info(f"📝 Creating client profile for user {message.from_user.id}")
+
+        goal_map = {
+            "похудение": "weight_loss",
+            "набор": "muscle_gain",
+            "поддержание": "maintain",
+            "weight_loss": "weight_loss",
+            "muscle_gain": "muscle_gain",
+            "maintain": "maintain"
+        }
+
+        goal = goal_map.get(goal_text.lower())
+        if not goal:
+            await message.answer(
+                "❌ Пожалуйста, выберите одну из целей:\n"
+                "похудение, набор, поддержание",
+                reply_markup=get_goal_keyboard()
+            )
+            return
+
         data = await state.get_data()
+        logger.info(f"📝 Data: {data}")
 
         user = db.create_user(
             telegram_id=message.from_user.id,
@@ -342,6 +350,8 @@ async def _finish_client_registration(
             height=data.get('height', 0),
             goal=goal
         )
+
+        logger.info(f"✅ User created: {user}")
 
         if not user:
             await message.answer(
@@ -374,9 +384,10 @@ async def _finish_client_registration(
             await callback.answer()
 
     except Exception as e:
-        logger.error(f"Error in _finish_client_registration: {e}\n{traceback.format_exc()}")
+        error_text = f"❌ Error in _finish_client_registration: {e}\n{traceback.format_exc()}"
+        logger.error(error_text)
         await message.answer(
-            "❌ Ошибка при создании профиля. Попробуйте позже.",
+            f"❌ Ошибка при создании профиля: {str(e)[:200]}",
             reply_markup=get_cancel_keyboard()
         )
         await state.clear()
