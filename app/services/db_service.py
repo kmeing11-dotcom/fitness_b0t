@@ -43,19 +43,16 @@ class DatabaseService:
 
     # ====================== USER ======================
 
-    def get_user(self, user_id: int):
-        with self._get_session() as session:
-            user = session.query(User).filter(User.id == user_id).first()
-            if user:
-                session.expunge(user)
-            return user
+# В методе get_user — убираем expunge
+def get_user(self, user_id: int):
+    with self._get_session() as session:
+        return session.query(User).filter(User.id == user_id).first()
 
-    def get_user_by_telegram(self, telegram_id: int):
-        with self._get_session() as session:
-            user = session.query(User).filter(User.telegram_id == telegram_id).first()
-            if user:
-                session.expunge(user)
-            return user
+# В методе get_user_by_telegram — убираем expunge
+def get_user_by_telegram(self, telegram_id: int):
+    with self._get_session() as session:
+        return session.query(User).filter(User.telegram_id == telegram_id).first()
+
 
     def get_user_by_username(self, username: str):
         if not username:
@@ -66,19 +63,19 @@ class DatabaseService:
                 session.expunge(user)
             return user
 
-    def create_user(self, telegram_id, username, full_name, role, **kwargs):
-        with self._get_session() as session:
-            user = User(
-                telegram_id=telegram_id,
-                username=username,
-                full_name=full_name,
-                role=role,
-                **kwargs
-            )
-            session.add(user)
-            session.flush()
-            session.expunge(user)
-            return user
+def create_user(self, telegram_id, username, full_name, role, **kwargs):
+    with self._get_session() as session:
+        user = User(
+            telegram_id=telegram_id,
+            username=username,
+            full_name=full_name,
+            role=role,
+            **kwargs
+        )
+        session.add(user)
+        session.flush()
+        session.refresh(user)  # <-- Вместо expunge используем refresh
+        return user
 
     def update_user(self, user_id: int, **kwargs):
         with self._get_session() as session:
