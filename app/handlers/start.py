@@ -14,7 +14,8 @@ from app.keyboards.inline import (
     get_back_keyboard
 )
 from app.utils.logger import get_logger
-import re
+import traceback
+import sys
 
 logger = get_logger(__name__)
 router = Router()
@@ -39,7 +40,10 @@ class RegistrationStates(StatesGroup):
 @router.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
     try:
+        logger.info(f"✅ /start called by user {message.from_user.id}")
+
         user = db.get_user_by_telegram(message.from_user.id)
+        logger.info(f"✅ User found: {user is not None}")
 
         if user:
             await state.clear()
@@ -66,8 +70,11 @@ async def cmd_start(message: Message, state: FSMContext):
         await state.set_state(RegistrationStates.choosing_role)
 
     except Exception as e:
-        logger.error(f"Error in cmd_start: {e}")
-        await message.answer("❌ Произошла ошибка. Попробуйте позже.")
+        error_text = f"❌ Ошибка в cmd_start: {e}\n{traceback.format_exc()}"
+        logger.error(error_text)
+        # Отправляем детальную ошибку в Telegram (для отладки)
+        await message.answer(f"❌ Ошибка: {str(e)[:100]}")
+        raise  # Пробрасываем ошибку дальше, чтобы она попала в логи Render
 
 
 # ============================================================
@@ -85,7 +92,7 @@ async def register_trainer(message: Message, state: FSMContext):
         )
         await state.set_state(RegistrationStates.trainer_name)
     except Exception as e:
-        logger.error(f"Error in register_trainer: {e}")
+        logger.error(f"Error in register_trainer: {e}\n{traceback.format_exc()}")
         await message.answer("❌ Ошибка. Попробуйте ещё раз.")
 
 
@@ -100,7 +107,7 @@ async def register_client(message: Message, state: FSMContext):
         )
         await state.set_state(RegistrationStates.client_name)
     except Exception as e:
-        logger.error(f"Error in register_client: {e}")
+        logger.error(f"Error in register_client: {e}\n{traceback.format_exc()}")
         await message.answer("❌ Ошибка. Попробуйте ещё раз.")
 
 
@@ -123,7 +130,7 @@ async def process_trainer_name(message: Message, state: FSMContext):
         )
         await state.set_state(RegistrationStates.trainer_phone)
     except Exception as e:
-        logger.error(f"Error in process_trainer_name: {e}")
+        logger.error(f"Error in process_trainer_name: {e}\n{traceback.format_exc()}")
         await message.answer("❌ Ошибка. Попробуйте ещё раз.")
 
 
@@ -131,6 +138,7 @@ async def process_trainer_name(message: Message, state: FSMContext):
 async def process_trainer_phone(message: Message, state: FSMContext):
     try:
         phone = message.text.strip()
+        import re
         phone_clean = re.sub(r'[\s\-()]', '', phone)
         if not re.match(r'^\+?\d{10,15}$', phone_clean):
             await message.answer(
@@ -147,7 +155,7 @@ async def process_trainer_phone(message: Message, state: FSMContext):
         )
         await state.set_state(RegistrationStates.trainer_studio)
     except Exception as e:
-        logger.error(f"Error in process_trainer_phone: {e}")
+        logger.error(f"Error in process_trainer_phone: {e}\n{traceback.format_exc()}")
         await message.answer("❌ Ошибка. Попробуйте ещё раз.")
 
 
@@ -187,7 +195,7 @@ async def process_trainer_studio(message: Message, state: FSMContext):
         logger.info(f"✅ New trainer registered: {user.telegram_id} ({user.full_name})")
 
     except Exception as e:
-        logger.error(f"Error in process_trainer_studio: {e}")
+        logger.error(f"Error in process_trainer_studio: {e}\n{traceback.format_exc()}")
         await message.answer(
             "❌ Ошибка при создании профиля. Попробуйте позже.",
             reply_markup=get_cancel_keyboard()
@@ -214,7 +222,7 @@ async def process_client_name(message: Message, state: FSMContext):
         )
         await state.set_state(RegistrationStates.client_age)
     except Exception as e:
-        logger.error(f"Error in process_client_name: {e}")
+        logger.error(f"Error in process_client_name: {e}\n{traceback.format_exc()}")
         await message.answer("❌ Ошибка. Попробуйте ещё раз.")
 
 
@@ -283,7 +291,7 @@ async def process_client_goal(message: Message, state: FSMContext):
         await _finish_client_registration(message, state, goal)
 
     except Exception as e:
-        logger.error(f"Error in process_client_goal: {e}")
+        logger.error(f"Error in process_client_goal: {e}\n{traceback.format_exc()}")
         await message.answer("❌ Ошибка. Попробуйте ещё раз.")
 
 
@@ -294,7 +302,7 @@ async def process_client_goal_callback(callback: CallbackQuery, state: FSMContex
         await _finish_client_registration(callback.message, state, goal, callback=callback)
 
     except Exception as e:
-        logger.error(f"Error in process_client_goal_callback: {e}")
+        logger.error(f"Error in process_client_goal_callback: {e}\n{traceback.format_exc()}")
         await callback.answer("❌ Ошибка", show_alert=True)
 
 
@@ -366,7 +374,7 @@ async def _finish_client_registration(
             await callback.answer()
 
     except Exception as e:
-        logger.error(f"Error in _finish_client_registration: {e}")
+        logger.error(f"Error in _finish_client_registration: {e}\n{traceback.format_exc()}")
         await message.answer(
             "❌ Ошибка при создании профиля. Попробуйте позже.",
             reply_markup=get_cancel_keyboard()
