@@ -201,9 +201,6 @@ async def menu_reminders(message: Message):
 
 @router.message(F.text == "📨 Рассылка")
 async def menu_broadcast(message: Message):
-    """
-    Меню рассылки сообщений.
-    """
     try:
         user = db.get_user_by_telegram(message.from_user.id)
         if not user or user.role != UserRole.TRAINER:
@@ -220,7 +217,7 @@ async def menu_broadcast(message: Message):
             )
             return
 
-        keyboard = get_clients_list_keyboard(clients, action="msg_select")
+        keyboard = get_clients_list_keyboard(clients, action="msg")  # <-- ИЗМЕНИЛ action с "msg_select" на "msg"
 
         await message.answer(
             f"📨 <b>Выберите ученика для отправки сообщения:</b>\n\n"
@@ -232,7 +229,6 @@ async def menu_broadcast(message: Message):
     except Exception as e:
         logger.error(f"Error in menu_broadcast: {e}")
         await message.answer("❌ Ошибка при загрузке рассылки.")
-
 
 @router.message(F.text == "⚙️ Настройки")
 async def menu_settings(message: Message):
