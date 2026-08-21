@@ -41,29 +41,35 @@ class DatabaseService:
         finally:
             session.close()
 
-    # ====================== USER ======================
+# ====================== USER ======================
 
-    def get_user(self, user_id: int):
-        with self._get_session() as session:
-            return session.query(User).filter(User.id == user_id).first()
+def get_user(self, user_id: int):
+    with self._get_session() as session:
+        user = session.query(User).filter(User.id == user_id).first()
+        if user:
+            session.expunge(user)  # Открепляем объект
+        return user
 
-    def get_user_by_telegram(self, telegram_id: int):
-        with self._get_session() as session:
-            return session.query(User).filter(User.telegram_id == telegram_id).first()
+def get_user_by_telegram(self, telegram_id: int):
+    with self._get_session() as session:
+        user = session.query(User).filter(User.telegram_id == telegram_id).first()
+        if user:
+            session.expunge(user)  # Открепляем объект
+        return user
 
-    def get_user_by_username(self, username: str):
-        if not username:
-            return None
-        with self._get_session() as session:
-            return session.query(User).filter(User.username == username).first()
+def get_user_by_username(self, username: str):
+    if not username:
+        return None
+    with self._get_session() as session:
+        user = session.query(User).filter(User.username == username).first()
+        if user:
+            session.expunge(user)  # Открепляем объект
+        return user
 
 def create_user(self, telegram_id, username, full_name, role, **kwargs):
     with self._get_session() as session:
-        # Проверяем, существует ли пользователь с таким telegram_id
         existing_user = session.query(User).filter(User.telegram_id == telegram_id).first()
-        
         if existing_user:
-            # Обновляем существующего пользователя
             existing_user.username = username
             existing_user.full_name = full_name
             existing_user.role = role
@@ -71,51 +77,58 @@ def create_user(self, telegram_id, username, full_name, role, **kwargs):
                 if hasattr(existing_user, key):
                     setattr(existing_user, key, value)
             session.flush()
-            # ВАЖНО: Убираем session.refresh() и session.expunge()
+            session.expunge(existing_user)  # Открепляем объект
             return existing_user
-        
-        # Создаём нового пользователя
-        user = User(
-            telegram_id=telegram_id,
-            username=username,
-            full_name=full_name,
-            role=role,
-            **kwargs
-        )
-        session.add(user)
-        session.flush()
-        # ВАЖНО: Убираем session.refresh() и session.expunge()
-        return user
+        else:
+            user = User(
+                telegram_id=telegram_id,
+                username=username,
+                full_name=full_name,
+                role=role,
+                **kwargs
+            )
+            session.add(user)
+            session.flush()
+            session.expunge(user)  # Открепляем объект
+            return user
 
-    def update_user(self, user_id: int, **kwargs):
-        with self._get_session() as session:
-            user = session.query(User).filter(User.id == user_id).first()
-            if user:
-                for key, value in kwargs.items():
-                    if hasattr(user, key):
-                        setattr(user, key, value)
-                session.flush()
-                session.refresh(user)
-                return user
-            return None
+def update_user(self, user_id: int, **kwargs):
+    with self._get_session() as session:
+        user = session.query(User).filter(User.id == user_id).first()
+        if user:
+            for key, value in kwargs.items():
+                if hasattr(user, key):
+                    setattr(user, key, value)
+            session.flush()
+            session.expunge(user)  # Открепляем объект
+            return user
+        return None
 
-    def get_all_users(self):
-        with self._get_session() as session:
-            return session.query(User).all()
+def get_all_users(self):
+    with self._get_session() as session:
+        users = session.query(User).all()
+        for user in users:
+            session.expunge(user)  # Открепляем каждый объект
+        return users
 
-    def get_users_by_role(self, role: UserRole):
-        with self._get_session() as session:
-            return session.query(User).filter(
-                User.role == role,
-                User.is_active == True
-            ).all()
+def get_users_by_role(self, role: UserRole):
+    with self._get_session() as session:
+        users = session.query(User).filter(
+            User.role == role,
+            User.is_active == True
+        ).all()
+        for user in users:
+            session.expunge(user)  # Открепляем каждый объект
+        return users
 
-    def get_users_by_ids(self, user_ids: list):
-        if not user_ids:
-            return []
-        with self._get_session() as session:
-            return session.query(User).filter(User.id.in_(user_ids)).all()
-
+def get_users_by_ids(self, user_ids: list):
+    if not user_ids:
+        return []
+    with self._get_session() as session:
+        users = session.query(User).filter(User.id.in_(user_ids)).all()
+        for user in users:
+            session.expunge(user)  # Открепляем каждый объект
+        return users
     # ====================== CLIENTS ======================
 
     def get_trainer_clients(self, trainer_id: int):
