@@ -33,10 +33,6 @@ class RegistrationStates(StatesGroup):
     client_goal = State()
 
 
-# ============================================================
-#  КОМАНДА /start
-# ============================================================
-
 @router.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
     try:
@@ -72,13 +68,8 @@ async def cmd_start(message: Message, state: FSMContext):
     except Exception as e:
         error_text = f"❌ Ошибка в cmd_start: {e}\n{traceback.format_exc()}"
         logger.error(error_text)
-        # Отправляем без HTML-разметки, чтобы избежать ошибок парсинга
         await message.answer(f"❌ Ошибка: {str(e)[:200]}")
 
-
-# ============================================================
-#  ОБРАБОТЧИКИ ВЫБОРА РОЛИ
-# ============================================================
 
 @router.message(StateFilter(RegistrationStates.choosing_role), F.text == "👨‍🏫 Тренер")
 async def register_trainer(message: Message, state: FSMContext):
@@ -109,10 +100,6 @@ async def register_client(message: Message, state: FSMContext):
         logger.error(f"Error in register_client: {e}\n{traceback.format_exc()}")
         await message.answer("❌ Ошибка. Попробуйте ещё раз.")
 
-
-# ============================================================
-#  РЕГИСТРАЦИЯ ТРЕНЕРА
-# ============================================================
 
 @router.message(StateFilter(RegistrationStates.trainer_name))
 async def process_trainer_name(message: Message, state: FSMContext):
@@ -165,9 +152,6 @@ async def process_trainer_studio(message: Message, state: FSMContext):
         data = await state.get_data()
         studio = message.text.strip()
 
-        logger.info(f"📝 Data: {data}")
-        logger.info(f"📝 Studio: {studio}")
-
         user = db.create_user(
             telegram_id=message.from_user.id,
             username=message.from_user.username or f"user_{message.from_user.id}",
@@ -177,8 +161,6 @@ async def process_trainer_studio(message: Message, state: FSMContext):
             studio_name=studio if studio.lower() != 'нет' else None
         )
 
-        logger.info(f"✅ User created: {user}")
-
         if not user:
             await message.answer(
                 "❌ Не удалось создать профиль. Попробуйте позже.",
@@ -186,7 +168,6 @@ async def process_trainer_studio(message: Message, state: FSMContext):
             )
             return
 
-        # ОТПРАВЛЯЕМ БЕЗ HTML-РАЗМЕТКИ, чтобы избежать ошибок парсинга
         await message.answer(
             f"✅ Профиль тренера создан!\n\n"
             f"👤 Имя: {user.full_name}\n"
@@ -200,18 +181,13 @@ async def process_trainer_studio(message: Message, state: FSMContext):
         logger.info(f"✅ New trainer registered: {user.telegram_id} ({user.full_name})")
 
     except Exception as e:
-        error_text = f"❌ Error in process_trainer_studio: {e}\n{traceback.format_exc()}"
-        logger.error(error_text)
+        logger.error(f"Error in process_trainer_studio: {e}\n{traceback.format_exc()}")
         await message.answer(
             f"❌ Ошибка при создании профиля: {str(e)[:200]}",
             reply_markup=get_cancel_keyboard()
         )
         await state.clear()
 
-
-# ============================================================
-#  РЕГИСТРАЦИЯ УЧЕНИКА
-# ============================================================
 
 @router.message(StateFilter(RegistrationStates.client_name))
 async def process_client_name(message: Message, state: FSMContext):
@@ -340,7 +316,6 @@ async def _finish_client_registration(
             return
 
         data = await state.get_data()
-        logger.info(f"📝 Data: {data}")
 
         user = db.create_user(
             telegram_id=message.from_user.id,
@@ -351,8 +326,6 @@ async def _finish_client_registration(
             height=data.get('height', 0),
             goal=goal
         )
-
-        logger.info(f"✅ User created: {user}")
 
         if not user:
             await message.answer(
@@ -367,7 +340,6 @@ async def _finish_client_registration(
             "maintain": "Поддержание"
         }.get(goal, goal)
 
-        # ОТПРАВЛЯЕМ БЕЗ HTML-РАЗМЕТКИ
         await message.answer(
             f"✅ Профиль ученика создан!\n\n"
             f"👤 Имя: {user.full_name}\n"
@@ -385,8 +357,7 @@ async def _finish_client_registration(
             await callback.answer()
 
     except Exception as e:
-        error_text = f"❌ Error in _finish_client_registration: {e}\n{traceback.format_exc()}"
-        logger.error(error_text)
+        logger.error(f"Error in _finish_client_registration: {e}\n{traceback.format_exc()}")
         await message.answer(
             f"❌ Ошибка при создании профиля: {str(e)[:200]}",
             reply_markup=get_cancel_keyboard()
@@ -395,10 +366,6 @@ async def _finish_client_registration(
         if callback:
             await callback.answer("❌ Ошибка", show_alert=True)
 
-
-# ============================================================
-#  КЛАВИАТУРА ДЛЯ ВЫБОРА ЦЕЛИ
-# ============================================================
 
 def get_goal_keyboard():
     from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
