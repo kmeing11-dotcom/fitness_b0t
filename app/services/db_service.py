@@ -407,19 +407,21 @@ def create_user(self, telegram_id, username, full_name, role, **kwargs):
         with self._get_session() as session:
             return session.query(User).filter(User.is_active == True).count()
 
-    def get_stats(self):
-        with self._get_session() as session:
-            from sqlalchemy import func
-            total_users = session.query(func.count(User.id)).scalar()
-            active_users = session.query(func.count(User.id)).filter(User.is_active == True).scalar()
-            total_trainers = session.query(func.count(User.id)).filter(User.role == UserRole.TRAINER).scalar()
-            total_clients = session.query(func.count(User.id)).filter(User.role == UserRole.CLIENT).scalar()
-            today_measurements = self.get_daily_measurements_count()
-            active_subscriptions = self.get_all_active_subscriptions()
+def get_stats(self):
+    with self._get_session() as session:
+        from sqlalchemy import func
+        total_users = session.query(func.count(User.id)).scalar()
+        active_users = session.query(func.count(User.id)).filter(User.is_active == True).scalar()
+        total_trainers = session.query(func.count(User.id)).filter(User.role == UserRole.TRAINER).scalar()
+        total_clients = session.query(func.count(User.id)).filter(User.role == UserRole.CLIENT).scalar()
+        today_measurements = self.get_daily_measurements_count()
+        active_subscriptions = self.get_all_active_subscriptions()
 
-            return {
-                'total_users': total_users or 0,
-                'active_users': active_users or 0,
-                'total_trainers': total_trainers or 0,
-                'total_clients': total_clients or 0,
-                'today_measurements': today_measurements,
+        return {
+            'total_users': total_users or 0,
+            'active_users': active_users or 0,
+            'total_trainers': total_trainers or 0,
+            'total_clients': total_clients or 0,
+            'today_measurements': today_measurements,
+            'active_subscriptions': active_subscriptions or 0
+        }  # <-- ВАЖНО: ЭТА СКОБКА ДОЛЖНА БЫТЬ!
