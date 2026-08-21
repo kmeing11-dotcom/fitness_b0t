@@ -193,57 +193,69 @@ class DatabaseService:
                 TrainerClient.is_active == True
             ).first() is not None
 
-    # ====================== MEASUREMENTS ======================
+# ====================== MEASUREMENTS ======================
 
-    def create_measurement(self, user_id: int, data: dict):
-        with self._get_session() as session:
-            m = Measurement(user_id=user_id, **data)
-            session.add(m)
-            session.flush()
-            session.refresh(m)
-            return m
+def create_measurement(self, user_id: int, data: dict):
+    with self._get_session() as session:
+        m = Measurement(user_id=user_id, **data)
+        session.add(m)
+        session.flush()
+        session.expunge(m)
+        return m
 
-    def get_measurements(self, user_id: int, days: int = 30):
-        cutoff = datetime.now() - timedelta(days=days)
-        with self._get_session() as session:
-            return session.query(Measurement).filter(
-                Measurement.user_id == user_id,
-                Measurement.measured_at >= cutoff
-            ).order_by(Measurement.measured_at.asc()).all()
+def get_measurements(self, user_id: int, days: int = 30):
+    cutoff = datetime.now() - timedelta(days=days)
+    with self._get_session() as session:
+        measurements = session.query(Measurement).filter(
+            Measurement.user_id == user_id,
+            Measurement.measured_at >= cutoff
+        ).order_by(Measurement.measured_at.asc()).all()
+        for m in measurements:
+            session.expunge(m)
+        return measurements
 
-    def get_all_measurements(self, user_id: int, limit: int = None):
-        with self._get_session() as session:
-            query = session.query(Measurement).filter(
-                Measurement.user_id == user_id
-            ).order_by(Measurement.measured_at.desc())
-            if limit:
-                query = query.limit(limit)
-            return query.all()
+def get_all_measurements(self, user_id: int, limit: int = None):
+    with self._get_session() as session:
+        query = session.query(Measurement).filter(
+            Measurement.user_id == user_id
+        ).order_by(Measurement.measured_at.desc())
+        if limit:
+            query = query.limit(limit)
+        measurements = query.all()
+        for m in measurements:
+            session.expunge(m)
+        return measurements
 
-    def get_last_measurement(self, user_id: int):
-        with self._get_session() as session:
-            return session.query(Measurement).filter(
-                Measurement.user_id == user_id
-            ).order_by(Measurement.measured_at.desc()).first()
+def get_last_measurement(self, user_id: int):
+    with self._get_session() as session:
+        m = session.query(Measurement).filter(
+            Measurement.user_id == user_id
+        ).order_by(Measurement.measured_at.desc()).first()
+        if m:
+            session.expunge(m)
+        return m
 
-    def get_first_measurement(self, user_id: int):
-        with self._get_session() as session:
-            return session.query(Measurement).filter(
-                Measurement.user_id == user_id
-            ).order_by(Measurement.measured_at.asc()).first()
+def get_first_measurement(self, user_id: int):
+    with self._get_session() as session:
+        m = session.query(Measurement).filter(
+            Measurement.user_id == user_id
+        ).order_by(Measurement.measured_at.asc()).first()
+        if m:
+            session.expunge(m)
+        return m
 
-    def get_measurement_stats(self, user_id: int, days: int = 30):
-        with self._get_session() as session:
-            from sqlalchemy import func
-            return session.query(
-                func.min(Measurement.weight).label('min_weight'),
-                func.max(Measurement.weight).label('max_weight'),
-                func.avg(Measurement.weight).label('avg_weight'),
-                func.count(Measurement.id).label('total')
-            ).filter(
-                Measurement.user_id == user_id,
-                Measurement.measured_at >= datetime.now() - timedelta(days=days)
-            ).first()
+def get_measurement_stats(self, user_id: int, days: int = 30):
+    with self._get_session() as session:
+        from sqlalchemy import func
+        return session.query(
+            func.min(Measurement.weight).label('min_weight'),
+            func.max(Measurement.weight).label('max_weight'),
+            func.avg(Measurement.weight).label('avg_weight'),
+            func.count(Measurement.id).label('total')
+        ).filter(
+            Measurement.user_id == user_id,
+            Measurement.measured_at >= datetime.now() - timedelta(days=days)
+        ).first()
 
     # ====================== REMINDERS ======================
 
