@@ -48,7 +48,6 @@ class DatabaseService:
             return session.query(User).filter(User.id == user_id).first()
 
     def get_user_by_telegram(self, telegram_id: int):
-        """Получает пользователя по Telegram ID"""
         with self._get_session() as session:
             return session.query(User).filter(User.telegram_id == telegram_id).first()
 
@@ -58,35 +57,38 @@ class DatabaseService:
         with self._get_session() as session:
             return session.query(User).filter(User.username == username).first()
 
-def create_user(self, telegram_id, username, full_name, role, **kwargs):
-    with self._get_session() as session:
-        # Проверяем, существует ли уже пользователь
-        existing_user = session.query(User).filter(User.telegram_id == telegram_id).first()
-        
-        if existing_user:
-            # Обновляем существующего пользователя
-            existing_user.username = username
-            existing_user.full_name = full_name
-            existing_user.role = role
-            for key, value in kwargs.items():
-                if hasattr(existing_user, key):
-                    setattr(existing_user, key, value)
+    def create_user(self, telegram_id, username, full_name, role, **kwargs):
+        """Создаёт нового пользователя или обновляет существующего"""
+        with self._get_session() as session:
+            # Проверяем, существует ли пользователь с таким telegram_id
+            existing_user = session.query(User).filter(User.telegram_id == telegram_id).first()
+            
+            if existing_user:
+                # Обновляем существующего пользователя
+                existing_user.username = username
+                existing_user.full_name = full_name
+                existing_user.role = role
+                for key, value in kwargs.items():
+                    if hasattr(existing_user, key):
+                        setattr(existing_user, key, value)
+                session.flush()
+                session.refresh(existing_user)
+                logger.info(f"✅ User updated: {existing_user.telegram_id}")
+                return existing_user
+            
+            # Создаём нового пользователя
+            user = User(
+                telegram_id=telegram_id,
+                username=username,
+                full_name=full_name,
+                role=role,
+                **kwargs
+            )
+            session.add(user)
             session.flush()
-            session.refresh(existing_user)
-            return existing_user
-        
-        # Создаём нового пользователя
-        user = User(
-            telegram_id=telegram_id,
-            username=username,
-            full_name=full_name,
-            role=role,
-            **kwargs
-        )
-        session.add(user)
-        session.flush()
-        session.refresh(user)
-        return user
+            session.refresh(user)
+            logger.info(f"✅ User created: {user.telegram_id}")
+            return user
 
     def update_user(self, user_id: int, **kwargs):
         with self._get_session() as session:
