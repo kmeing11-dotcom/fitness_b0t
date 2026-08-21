@@ -27,8 +27,6 @@ logger = get_logger(__name__)
 
 
 class FitnessBot:
-    """Главный класс бота"""
-
     def __init__(self):
         self.bot = None
         self.dp = None
@@ -38,55 +36,40 @@ class FitnessBot:
         self._running = False
 
     async def initialize(self):
-        """Инициализация бота и всех компонентов"""
         try:
             Config.validate()
         except ValueError as e:
             logger.error(f"❌ Configuration error: {e}")
             raise
 
-        # ⚠️ ВРЕМЕННО: Удаляем все таблицы
-        # !!! ВНИМАНИЕ: ЭТО УДАЛИТ ВСЕ ДАННЫЕ !!!
-        logger.warning("⚠️ DROPPING ALL TABLES! (временный шаг)")
-        Database.drop_db()
-        # ⚠️ УБЕРИ ЭТУ СТРОКУ ПОСЛЕ ПЕРЕСОЗДАНИЯ ТАБЛИЦ !!!
-
-        # Инициализируем БД
         init_db()
         logger.info("✅ Database initialized")
 
-        # Создаём сессию для бота
         session = AiohttpSession(timeout=120)
 
         self.bot = Bot(
             token=Config.BOT_TOKEN,
             session=session,
-            default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+            # Убираем HTML-парсинг глобально
+            # default=DefaultBotProperties(parse_mode=ParseMode.HTML)
         )
         logger.info("✅ Bot created")
 
-        # Создаём диспетчер
         self.dp = Dispatcher(storage=MemoryStorage())
-
-        # Подключаем роутеры
         self._setup_routers()
         logger.info("✅ Routers registered")
 
-        # Создаём сервис напоминаний
         self.reminder_service = ReminderService(self.bot)
         await self.reminder_service.start()
         init_reminder_service(self.reminder_service)
         logger.info("✅ Reminder service created and started")
 
-        # Создаём временную папку
         Config.ensure_temp_folder()
         logger.info(f"✅ Temp folder: {Config.get_temp_folder()}")
 
-        # Настраиваем обработчики сигналов
         self._setup_signal_handlers()
 
     def _setup_routers(self):
-        """Подключает все роутеры"""
         routers = [
             start.router,
             client.router,
@@ -103,7 +86,6 @@ class FitnessBot:
             self.dp.include_router(router)
 
     def _setup_signal_handlers(self):
-        """Настраивает обработку сигналов для graceful shutdown"""
         def signal_handler(sig, frame):
             logger.info(f"Received signal {sig}, stopping bot...")
             asyncio.create_task(self.shutdown())
@@ -112,7 +94,6 @@ class FitnessBot:
         signal.signal(signal.SIGTERM, signal_handler)
 
     async def start_web_server(self):
-        """Запускает веб-сервер для health checks"""
         app = web.Application()
         app.router.add_get("/", self.health_check)
         app.router.add_get("/health", self.health_check)
@@ -129,20 +110,12 @@ class FitnessBot:
 
     @staticmethod
     async def health_check(request):
-        """Health check endpoint"""
         return web.Response(text="OK")
 
-    async def start_background_tasks(self):
-        """Запускает фоновые задачи"""
-        pass
-
     async def run(self):
-        """Запускает бота"""
         try:
             self._running = True
-
             await self.start_web_server()
-
             logger.info("🚀 Bot started successfully!")
 
             await self.dp.start_polling(
@@ -157,7 +130,6 @@ class FitnessBot:
             await self.shutdown()
 
     async def shutdown(self):
-        """Корректное завершение работы"""
         if not self._running:
             return
 
@@ -187,7 +159,6 @@ class FitnessBot:
 
 
 async def main():
-    """Точка входа"""
     bot = FitnessBot()
     await bot.initialize()
     await bot.run()
