@@ -41,94 +41,95 @@ class DatabaseService:
         finally:
             session.close()
 
-# ====================== USER ======================
+    # ====================== USER ======================
 
-def get_user(self, user_id: int):
-    with self._get_session() as session:
-        user = session.query(User).filter(User.id == user_id).first()
-        if user:
-            session.expunge(user)  # Открепляем объект
-        return user
-
-def get_user_by_telegram(self, telegram_id: int):
-    with self._get_session() as session:
-        user = session.query(User).filter(User.telegram_id == telegram_id).first()
-        if user:
-            session.expunge(user)  # Открепляем объект
-        return user
-
-def get_user_by_username(self, username: str):
-    if not username:
-        return None
-    with self._get_session() as session:
-        user = session.query(User).filter(User.username == username).first()
-        if user:
-            session.expunge(user)  # Открепляем объект
-        return user
-
-def create_user(self, telegram_id, username, full_name, role, **kwargs):
-    with self._get_session() as session:
-        existing_user = session.query(User).filter(User.telegram_id == telegram_id).first()
-        if existing_user:
-            existing_user.username = username
-            existing_user.full_name = full_name
-            existing_user.role = role
-            for key, value in kwargs.items():
-                if hasattr(existing_user, key):
-                    setattr(existing_user, key, value)
-            session.flush()
-            session.expunge(existing_user)  # Открепляем объект
-            return existing_user
-        else:
-            user = User(
-                telegram_id=telegram_id,
-                username=username,
-                full_name=full_name,
-                role=role,
-                **kwargs
-            )
-            session.add(user)
-            session.flush()
-            session.expunge(user)  # Открепляем объект
+    def get_user(self, user_id: int):
+        with self._get_session() as session:
+            user = session.query(User).filter(User.id == user_id).first()
+            if user:
+                session.expunge(user)
             return user
 
-def update_user(self, user_id: int, **kwargs):
-    with self._get_session() as session:
-        user = session.query(User).filter(User.id == user_id).first()
-        if user:
-            for key, value in kwargs.items():
-                if hasattr(user, key):
-                    setattr(user, key, value)
-            session.flush()
-            session.expunge(user)  # Открепляем объект
+    def get_user_by_telegram(self, telegram_id: int):
+        with self._get_session() as session:
+            user = session.query(User).filter(User.telegram_id == telegram_id).first()
+            if user:
+                session.expunge(user)
             return user
-        return None
 
-def get_all_users(self):
-    with self._get_session() as session:
-        users = session.query(User).all()
-        for user in users:
-            session.expunge(user)  # Открепляем каждый объект
-        return users
+    def get_user_by_username(self, username: str):
+        if not username:
+            return None
+        with self._get_session() as session:
+            user = session.query(User).filter(User.username == username).first()
+            if user:
+                session.expunge(user)
+            return user
 
-def get_users_by_role(self, role: UserRole):
-    with self._get_session() as session:
-        users = session.query(User).filter(
-            User.role == role,
-            User.is_active == True
-        ).all()
-        for user in users:
-            session.expunge(user)  # Открепляем каждый объект
-        return users
+    def create_user(self, telegram_id, username, full_name, role, **kwargs):
+        with self._get_session() as session:
+            existing_user = session.query(User).filter(User.telegram_id == telegram_id).first()
+            if existing_user:
+                existing_user.username = username
+                existing_user.full_name = full_name
+                existing_user.role = role
+                for key, value in kwargs.items():
+                    if hasattr(existing_user, key):
+                        setattr(existing_user, key, value)
+                session.flush()
+                session.expunge(existing_user)
+                return existing_user
+            else:
+                user = User(
+                    telegram_id=telegram_id,
+                    username=username,
+                    full_name=full_name,
+                    role=role,
+                    **kwargs
+                )
+                session.add(user)
+                session.flush()
+                session.expunge(user)
+                return user
 
-def get_users_by_ids(self, user_ids: list):
-    if not user_ids:
-        return []
-    with self._get_session() as session:
-        users = session.query(User).filter(User.id.in_(user_ids)).all()
-        for user in users:
-            session.expunge(user)  # Открепляем каждый объект
-        return users
+    def update_user(self, user_id: int, **kwargs):
+        with self._get_session() as session:
+            user = session.query(User).filter(User.id == user_id).first()
+            if user:
+                for key, value in kwargs.items():
+                    if hasattr(user, key):
+                        setattr(user, key, value)
+                session.flush()
+                session.expunge(user)
+                return user
+            return None
+
+    def get_all_users(self):
+        with self._get_session() as session:
+            users = session.query(User).all()
+            for user in users:
+                session.expunge(user)
+            return users
+
+    def get_users_by_role(self, role: UserRole):
+        with self._get_session() as session:
+            users = session.query(User).filter(
+                User.role == role,
+                User.is_active == True
+            ).all()
+            for user in users:
+                session.expunge(user)
+            return users
+
+    def get_users_by_ids(self, user_ids: list):
+        if not user_ids:
+            return []
+        with self._get_session() as session:
+            users = session.query(User).filter(User.id.in_(user_ids)).all()
+            for user in users:
+                session.expunge(user)
+            return users
+
     # ====================== CLIENTS ======================
 
     def get_trainer_clients(self, trainer_id: int):
@@ -420,21 +421,21 @@ def get_users_by_ids(self, user_ids: list):
         with self._get_session() as session:
             return session.query(User).filter(User.is_active == True).count()
 
-def get_stats(self):
-    with self._get_session() as session:
-        from sqlalchemy import func
-        total_users = session.query(func.count(User.id)).scalar()
-        active_users = session.query(func.count(User.id)).filter(User.is_active == True).scalar()
-        total_trainers = session.query(func.count(User.id)).filter(User.role == UserRole.TRAINER).scalar()
-        total_clients = session.query(func.count(User.id)).filter(User.role == UserRole.CLIENT).scalar()
-        today_measurements = self.get_daily_measurements_count()
-        active_subscriptions = self.get_all_active_subscriptions()
+    def get_stats(self):
+        with self._get_session() as session:
+            from sqlalchemy import func
+            total_users = session.query(func.count(User.id)).scalar()
+            active_users = session.query(func.count(User.id)).filter(User.is_active == True).scalar()
+            total_trainers = session.query(func.count(User.id)).filter(User.role == UserRole.TRAINER).scalar()
+            total_clients = session.query(func.count(User.id)).filter(User.role == UserRole.CLIENT).scalar()
+            today_measurements = self.get_daily_measurements_count()
+            active_subscriptions = self.get_all_active_subscriptions()
 
-        return {
-            'total_users': total_users or 0,
-            'active_users': active_users or 0,
-            'total_trainers': total_trainers or 0,
-            'total_clients': total_clients or 0,
-            'today_measurements': today_measurements,
-            'active_subscriptions': active_subscriptions or 0
-        }  # <-- ВАЖНО: ЭТА СКОБКА ДОЛЖНА БЫТЬ!
+            return {
+                'total_users': total_users or 0,
+                'active_users': active_users or 0,
+                'total_trainers': total_trainers or 0,
+                'total_clients': total_clients or 0,
+                'today_measurements': today_measurements,
+                'active_subscriptions': active_subscriptions or 0
+            }
