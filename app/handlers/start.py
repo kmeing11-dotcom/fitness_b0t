@@ -72,6 +72,7 @@ async def cmd_start(message: Message, state: FSMContext):
     except Exception as e:
         error_text = f"❌ Ошибка в cmd_start: {e}\n{traceback.format_exc()}"
         logger.error(error_text)
+        # Отправляем без HTML-разметки, чтобы избежать ошибок парсинга
         await message.answer(f"❌ Ошибка: {str(e)[:200]}")
 
 
@@ -185,13 +186,13 @@ async def process_trainer_studio(message: Message, state: FSMContext):
             )
             return
 
+        # ОТПРАВЛЯЕМ БЕЗ HTML-РАЗМЕТКИ, чтобы избежать ошибок парсинга
         await message.answer(
-            f"✅ <b>Профиль тренера создан!</b>\n\n"
-            f"👤 Имя: <b>{user.full_name}</b>\n"
-            f"📱 Телефон: <b>{user.phone or 'Не указан'}</b>\n"
-            f"🏢 Студия: <b>{user.studio_name or 'Не указана'}</b>\n\n"
+            f"✅ Профиль тренера создан!\n\n"
+            f"👤 Имя: {user.full_name}\n"
+            f"📱 Телефон: {user.phone or 'Не указан'}\n"
+            f"🏢 Студия: {user.studio_name or 'Не указана'}\n\n"
             "Теперь вы можете добавлять учеников через меню.",
-            parse_mode=ParseMode.HTML,
             reply_markup=get_trainer_menu_keyboard()
         )
         await state.clear()
@@ -366,14 +367,14 @@ async def _finish_client_registration(
             "maintain": "Поддержание"
         }.get(goal, goal)
 
+        # ОТПРАВЛЯЕМ БЕЗ HTML-РАЗМЕТКИ
         await message.answer(
-            f"✅ <b>Профиль ученика создан!</b>\n\n"
-            f"👤 Имя: <b>{user.full_name}</b>\n"
-            f"🎂 Возраст: <b>{user.age}</b> лет\n"
-            f"📏 Рост: <b>{user.height}</b> см\n"
-            f"🎯 Цель: <b>{goal_ru}</b>\n\n"
+            f"✅ Профиль ученика создан!\n\n"
+            f"👤 Имя: {user.full_name}\n"
+            f"🎂 Возраст: {user.age} лет\n"
+            f"📏 Рост: {user.height} см\n"
+            f"🎯 Цель: {goal_ru}\n\n"
             "Теперь вы можете вносить замеры через меню.",
-            parse_mode=ParseMode.HTML,
             reply_markup=get_client_menu_keyboard()
         )
         await state.clear()
