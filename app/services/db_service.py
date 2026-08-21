@@ -423,5 +423,3 @@ def create_user(self, telegram_id, username, full_name, role, **kwargs):
                 'total_trainers': total_trainers or 0,
                 'total_clients': total_clients or 0,
                 'today_measurements': today_measurements,
-                'active_subscriptions': active_subscriptions or 0
-            }
