@@ -187,7 +187,7 @@ async def process_trainer_studio(message: Message, state: FSMContext):
 
         await message.answer(
             f"✅ <b>Профиль тренера создан!</b>\n\n"
-            f"👤 Имя: {user.full_name}\n"
+            f"👤 Имя: <b>{user.full_name}</b>\n"
             f"📱 Телефон: {user.phone or 'Не указан'}\n"
             f"🏢 Студия: {user.studio_name or 'Не указана'}\n\n"
             "Теперь вы можете добавлять учеников через меню.",
