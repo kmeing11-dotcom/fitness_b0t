@@ -1,5 +1,8 @@
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.filters import Command, StateFilter
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.enums import ParseMode
 from datetime import datetime
 from app.services.db_service import DatabaseService
@@ -18,6 +21,18 @@ router = Router()
 db = DatabaseService()
 
 
+# ============================================================
+#  FSM ДЛЯ ОТПРАВКИ СООБЩЕНИЙ
+# ============================================================
+
+class MessageStates(StatesGroup):
+    waiting_for_message = State()
+
+
+# ============================================================
+#  ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ
+# ============================================================
+
 def get_client_id_from_callback(callback_data: str) -> int:
     """Универсальный парсинг ID из callback_data"""
     parts = callback_data.split("_")
@@ -27,6 +42,10 @@ def get_client_id_from_callback(callback_data: str) -> int:
         raise ValueError(f"ID is not a number: {parts[1]}")
     return int(parts[1])
 
+
+# ============================================================
+#  ОБРАБОТЧИКИ
+# ============================================================
 
 @router.callback_query(F.data.startswith("info_"))
 async def show_client_info(callback: CallbackQuery):
@@ -77,8 +96,9 @@ async def show_client_info(callback: CallbackQuery):
 
 
 @router.callback_query(F.data == "back_to_clients")
-async def back_to_clients(callback: CallbackQuery):
+async def back_to_clients(callback: CallbackQuery, state: FSMContext):
     try:
+        await state.clear()  # Очищаем состояние
         logger.info(f"📥 [back_to_clients]")
         trainer = db.get_user_by_telegram(callback.from_user.id)
         if not trainer:
@@ -432,8 +452,12 @@ async def generate_client_report(callback: CallbackQuery):
         await callback.answer("❌ Ошибка", show_alert=True)
 
 
+# ============================================================
+#  ОТПРАВКА СООБЩЕНИЯ УЧЕНИКУ (С FSM)
+# ============================================================
+
 @router.callback_query(F.data.startswith("msg_"))
-async def prompt_message_to_client(callback: CallbackQuery):
+async def prompt_message_to_client(callback: CallbackQuery, state: FSMContext):
     try:
         # Проверяем, что это не "msg_select"
         if callback.data == "msg_select" or callback.data.startswith("msg_select_"):
@@ -458,8 +482,11 @@ async def prompt_message_to_client(callback: CallbackQuery):
             await callback.answer("❌ Это не ваш ученик", show_alert=True)
             return
 
+        # Сохраняем client_id в состоянии
+        await state.update_data(client_id=client_id, client_name=client.full_name or client.username)
+
         text = f"✏️ Напишите сообщение для <b>{client.full_name or client.username}</b>:\n\n"
-        text += "<i>Сообщение будет отправлено в личные сообщения ученику.</i>"
+        text += "<i>Отправьте текст сообщения. Чтобы отменить, нажмите кнопку ниже.</i>"
 
         # Inline-клавиатура для отмены
         cancel_keyboard = InlineKeyboardMarkup(
@@ -474,7 +501,7 @@ async def prompt_message_to_client(callback: CallbackQuery):
             reply_markup=cancel_keyboard
         )
 
-        # TODO: Добавить FSM для ожидания сообщения
+        await state.set_state(MessageStates.waiting_for_message)
         await callback.answer()
 
     except ValueError as e:
@@ -485,20 +512,56 @@ async def prompt_message_to_client(callback: CallbackQuery):
         await callback.answer("❌ Ошибка", show_alert=True)
 
 
+@router.message(StateFilter(MessageStates.waiting_for_message))
+async def send_message_to_client(message: Message, state: FSMContext):
+    """Отправляет сообщение ученику"""
+    try:
+        data = await state.get_data()
+        client_id = data.get('client_id')
+        client_name = data.get('client_name', 'Ученик')
+
+        if not client_id:
+            await message.answer("❌ Ошибка: не найден ID ученика. Попробуйте снова.")
+            await state.clear()
+            return
+
+        client = db.get_user(client_id)
+        if not client:
+            await message.answer("❌ Ученик не найден.")
+            await state.clear()
+            return
+
+        # Отправляем сообщение ученику
+        await message.bot.send_message(
+            chat_id=client.telegram_id,
+            text=f"📨 <b>Сообщение от тренера</b>\n\n{message.text}",
+            parse_mode=ParseMode.HTML
+        )
+
+        # Подтверждение тренеру
+        await message.answer(
+            f"✅ Сообщение отправлено ученику <b>{client_name}</b>!",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_back_keyboard()
+        )
+
+        # Очищаем состояние
+        await state.clear()
+
+    except Exception as e:
+        logger.error(f"❌ Error in send_message_to_client: {e}")
+        await message.answer("❌ Ошибка при отправке сообщения. Попробуйте позже.")
+        await state.clear()
+
+
 @router.callback_query(F.data == "cancel_message")
-async def cancel_message(callback: CallbackQuery):
+async def cancel_message(callback: CallbackQuery, state: FSMContext):
     """Отмена отправки сообщения"""
     try:
-        # Используем Inline-клавиатуру
-        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-        back_keyboard = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_clients")]
-            ]
-        )
+        await state.clear()
         await callback.message.edit_text(
             "❌ Отправка сообщения отменена.",
-            reply_markup=back_keyboard
+            reply_markup=get_back_keyboard()
         )
         await callback.answer()
     except Exception as e:
@@ -514,6 +577,4 @@ async def cancel_message(callback: CallbackQuery):
 async def catch_all_callbacks(callback: CallbackQuery):
     """Ловит все callback-запросы, которые не обработаны другими хендлерами"""
     logger.warning(f"⚠️ [UNHANDLED CALLBACK] data: {callback.data}")
-    logger.warning(f"⚠️ [UNHANDLED CALLBACK] from: {callback.from_user.id}")
-    logger.warning(f"⚠️ [UNHANDLED CALLBACK] message_id: {callback.message.message_id}")
-    await callback.answer(f"❌ Неизвестная команда: {callback.data[:50]}", show_alert=True)
+    await callback.answer(f"❌ Неизвестная команда", show_alert=True)
