@@ -68,14 +68,15 @@ async def admin_panel(message: Message):
 
 
 # ============================================================
-#  СТАТИСТИКА
+#  ОБРАБОТЧИКИ КНОПОК АДМИН-ПАНЕЛИ
 # ============================================================
 
-@router.message(Command("admin_stats"))
-async def admin_stats(message: Message):
+@router.callback_query(F.data == "admin_stats")
+async def admin_stats_callback(callback: CallbackQuery):
+    """Обработчик кнопки 'Статистика'"""
     try:
-        if not is_admin(message.from_user.id):
-            await message.answer("❌ Доступ запрещён.")
+        if not is_admin(callback.from_user.id):
+            await callback.answer("❌ Доступ запрещён.", show_alert=True)
             return
 
         trainers = db.get_users_by_role(UserRole.TRAINER)
@@ -97,30 +98,34 @@ async def admin_stats(message: Message):
             f"📅 <b>Дата:</b> {datetime.now().strftime('%d.%m.%Y %H:%M')}"
         )
 
-        await message.answer(
+        await callback.message.edit_text(
             response,
             parse_mode=ParseMode.HTML,
             reply_markup=get_back_keyboard()
         )
-
-        logger.info(f"📊 Admin stats viewed by {message.from_user.id}")
+        await callback.answer()
 
     except Exception as e:
-        logger.error(f"Error in admin_stats: {e}\n{traceback.format_exc()}")
-        await message.answer("❌ Ошибка при загрузке статистики.")
+        logger.error(f"Error in admin_stats_callback: {e}")
+        await callback.answer("❌ Ошибка", show_alert=True)
 
 
-@router.message(Command("admin_users"))
-async def admin_users(message: Message):
+@router.callback_query(F.data == "admin_users")
+async def admin_users_callback(callback: CallbackQuery):
+    """Обработчик кнопки 'Пользователи'"""
     try:
-        if not is_admin(message.from_user.id):
-            await message.answer("❌ Доступ запрещён.")
+        if not is_admin(callback.from_user.id):
+            await callback.answer("❌ Доступ запрещён.", show_alert=True)
             return
 
         users = db.get_all_users()
 
         if not users:
-            await message.answer("📭 В системе нет пользователей.")
+            await callback.message.edit_text(
+                "📭 В системе нет пользователей.",
+                reply_markup=get_back_keyboard()
+            )
+            await callback.answer()
             return
 
         response = "👥 <b>Список всех пользователей</b>\n"
@@ -141,140 +146,24 @@ async def admin_users(message: Message):
         if len(clients) > 10:
             response += f"  ... и ещё {len(clients) - 10} учеников\n"
 
-        await message.answer(
+        await callback.message.edit_text(
             response,
             parse_mode=ParseMode.HTML,
             reply_markup=get_back_keyboard()
         )
+        await callback.answer()
 
     except Exception as e:
-        logger.error(f"Error in admin_users: {e}")
-        await message.answer("❌ Ошибка при загрузке списка пользователей.")
+        logger.error(f"Error in admin_users_callback: {e}")
+        await callback.answer("❌ Ошибка", show_alert=True)
 
 
-# ============================================================
-#  УПРАВЛЕНИЕ ПОДПИСКАМИ
-# ============================================================
-
-@router.message(Command("set_trial"))
-async def set_trial(message: Message):
+@router.callback_query(F.data == "admin_subscriptions")
+async def admin_subscriptions_callback(callback: CallbackQuery):
+    """Обработчик кнопки 'Подписки'"""
     try:
-        if not is_admin(message.from_user.id):
-            await message.answer("❌ Доступ запрещён.")
-            return
-
-        args = message.text.split()
-        if len(args) < 3:
-            await message.answer(
-                "❌ <b>Использование:</b> /set_trial @username 7 (дней)\n\n"
-                "📌 <b>Пример:</b> /set_trial @john_doe 7",
-                parse_mode=ParseMode.HTML
-            )
-            return
-
-        username = args[1].lstrip('@')
-        user = db.get_user_by_username(username)
-
-        if not user:
-            await message.answer(f"❌ Пользователь @{username} не найден.")
-            return
-
-        try:
-            days = int(args[2])
-            if days <= 0:
-                await message.answer("❌ Количество дней должно быть больше 0.")
-                return
-        except ValueError:
-            await message.answer("❌ Укажите количество дней числом.")
-            return
-
-        subscription = db.set_trial_subscription(user.id, days)
-
-        if subscription:
-            await message.answer(
-                f"✅ <b>Пробный период выдан!</b>\n\n"
-                f"👤 Пользователь: @{username}\n"
-                f"📅 Дней: {days}\n"
-                f"⏳ До: {subscription.expires_at.strftime('%d.%m.%Y')}",
-                parse_mode=ParseMode.HTML,
-                reply_markup=get_back_keyboard()
-            )
-
-            try:
-                await message.bot.send_message(
-                    chat_id=user.telegram_id,
-                    text=(
-                        f"🎉 <b>Поздравляем!</b>\n\n"
-                        f"Вам выдан пробный период <b>Pro</b> на {days} дней!\n\n"
-                        f"⏳ Действует до: {subscription.expires_at.strftime('%d.%m.%Y')}"
-                    ),
-                    parse_mode=ParseMode.HTML
-                )
-            except Exception as e:
-                logger.warning(f"Could not notify user {user.id}: {e}")
-
-            logger.info(f"✅ Trial subscription granted to {user.id} for {days} days by admin {message.from_user.id}")
-        else:
-            await message.answer("❌ Не удалось выдать пробный период.")
-
-    except Exception as e:
-        logger.error(f"Error in set_trial: {e}")
-        await message.answer("❌ Ошибка при выдаче пробного периода.")
-
-
-@router.message(Command("cancel_subscription"))
-async def cancel_subscription(message: Message):
-    try:
-        if not is_admin(message.from_user.id):
-            await message.answer("❌ Доступ запрещён.")
-            return
-
-        args = message.text.split()
-        if len(args) < 2:
-            await message.answer(
-                "❌ <b>Использование:</b> /cancel_subscription @username",
-                parse_mode=ParseMode.HTML
-            )
-            return
-
-        username = args[1].lstrip('@')
-        user = db.get_user_by_username(username)
-
-        if not user:
-            await message.answer(f"❌ Пользователь @{username} не найден.")
-            return
-
-        result = db.cancel_subscription(user.id)
-
-        if result:
-            await message.answer(
-                f"✅ Подписка пользователя @{username} отключена.",
-                reply_markup=get_back_keyboard()
-            )
-
-            try:
-                await message.bot.send_message(
-                    chat_id=user.telegram_id,
-                    text="ℹ️ Ваша подписка <b>Pro</b> была отключена администратором.",
-                    parse_mode=ParseMode.HTML
-                )
-            except Exception:
-                pass
-
-            logger.info(f"❌ Subscription cancelled for {user.id} by admin {message.from_user.id}")
-        else:
-            await message.answer(f"❌ У пользователя @{username} не было активной подписки.")
-
-    except Exception as e:
-        logger.error(f"Error in cancel_subscription: {e}")
-        await message.answer("❌ Ошибка при отмене подписки.")
-
-
-@router.message(Command("admin_subscriptions"))
-async def admin_subscriptions(message: Message):
-    try:
-        if not is_admin(message.from_user.id):
-            await message.answer("❌ Доступ запрещён.")
+        if not is_admin(callback.from_user.id):
+            await callback.answer("❌ Доступ запрещён.", show_alert=True)
             return
 
         users = db.get_all_users()
@@ -289,10 +178,11 @@ async def admin_subscriptions(message: Message):
                 })
 
         if not subscriptions:
-            await message.answer(
+            await callback.message.edit_text(
                 "📭 Нет активных подписок.",
                 reply_markup=get_back_keyboard()
             )
+            await callback.answer()
             return
 
         response = "💎 <b>Активные подписки</b>\n"
@@ -311,29 +201,27 @@ async def admin_subscriptions(message: Message):
         if len(subscriptions) > 20:
             response += f"\n... и ещё {len(subscriptions) - 20} подписок"
 
-        await message.answer(
+        await callback.message.edit_text(
             response,
             parse_mode=ParseMode.HTML,
             reply_markup=get_back_keyboard()
         )
+        await callback.answer()
 
     except Exception as e:
-        logger.error(f"Error in admin_subscriptions: {e}")
-        await message.answer("❌ Ошибка при загрузке подписок.")
+        logger.error(f"Error in admin_subscriptions_callback: {e}")
+        await callback.answer("❌ Ошибка", show_alert=True)
 
 
-# ============================================================
-#  РАССЫЛКА
-# ============================================================
-
-@router.message(Command("broadcast"))
-async def start_broadcast(message: Message, state: FSMContext):
+@router.callback_query(F.data == "admin_broadcast")
+async def admin_broadcast_callback(callback: CallbackQuery, state: FSMContext):
+    """Обработчик кнопки 'Рассылка'"""
     try:
-        if not is_admin(message.from_user.id):
-            await message.answer("❌ Доступ запрещён.")
+        if not is_admin(callback.from_user.id):
+            await callback.answer("❌ Доступ запрещён.", show_alert=True)
             return
 
-        await message.answer(
+        await callback.message.edit_text(
             "📨 <b>Создание рассылки</b>\n\n"
             "Введите текст сообщения для рассылки всем пользователям:\n"
             "<i>(Можно использовать HTML-разметку)</i>",
@@ -341,11 +229,142 @@ async def start_broadcast(message: Message, state: FSMContext):
             reply_markup=get_cancel_keyboard()
         )
         await state.set_state(BroadcastStates.entering_message)
+        await callback.answer()
 
     except Exception as e:
-        logger.error(f"Error in start_broadcast: {e}")
-        await message.answer("❌ Ошибка при начале рассылки.")
+        logger.error(f"Error in admin_broadcast_callback: {e}")
+        await callback.answer("❌ Ошибка", show_alert=True)
 
+
+@router.callback_query(F.data == "admin_backup")
+async def admin_backup_callback(callback: CallbackQuery):
+    """Обработчик кнопки 'Бэкап'"""
+    try:
+        if not is_admin(callback.from_user.id):
+            await callback.answer("❌ Доступ запрещён.", show_alert=True)
+            return
+
+        await callback.message.edit_text(
+            "⏳ Создание бэкапа...",
+            reply_markup=get_back_keyboard()
+        )
+        await callback.answer()
+
+        backup_path = await backup_service.backup_database(compress=True)
+
+        if not backup_path:
+            await callback.message.edit_text(
+                "❌ Не удалось создать бэкап.",
+                reply_markup=get_back_keyboard()
+            )
+            await callback.answer()
+            return
+
+        await callback.message.delete()
+        await callback.message.answer_document(
+            document=FSInputFile(backup_path),
+            caption=f"💾 <b>Бэкап базы данных</b>\n"
+                    f"📅 {datetime.now().strftime('%d.%m.%Y %H:%M')}",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_back_keyboard()
+        )
+
+        logger.info(f"💾 Backup created by admin {callback.from_user.id}: {backup_path}")
+        await callback.answer()
+
+    except Exception as e:
+        logger.error(f"Error in admin_backup_callback: {e}")
+        await callback.message.edit_text(
+            "❌ Ошибка при создании бэкапа.",
+            reply_markup=get_back_keyboard()
+        )
+        await callback.answer()
+
+
+@router.callback_query(F.data == "admin_logs")
+async def admin_logs_callback(callback: CallbackQuery):
+    """Обработчик кнопки 'Логи'"""
+    try:
+        if not is_admin(callback.from_user.id):
+            await callback.answer("❌ Доступ запрещён.", show_alert=True)
+            return
+
+        from pathlib import Path
+
+        log_path = Path(Config.LOG_FILE)
+        if not log_path.exists():
+            await callback.message.edit_text(
+                "❌ Файл логов не найден.",
+                reply_markup=get_back_keyboard()
+            )
+            await callback.answer()
+            return
+
+        with open(log_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+            last_lines = lines[-100:] if len(lines) > 100 else lines
+
+        log_text = "".join(last_lines)
+
+        if len(log_text) > 4000:
+            await callback.message.delete()
+            await callback.message.answer_document(
+                document=FSInputFile(log_path),
+                caption=f"📋 <b>Логи системы</b>\n"
+                        f"📅 {datetime.now().strftime('%d.%m.%Y %H:%M')}",
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_back_keyboard()
+            )
+        else:
+            await callback.message.edit_text(
+                f"📋 <b>Последние логи:</b>\n\n"
+                f"<code>{log_text}</code>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_back_keyboard()
+            )
+
+        logger.info(f"📋 Logs viewed by admin {callback.from_user.id}")
+        await callback.answer()
+
+    except Exception as e:
+        logger.error(f"Error in admin_logs_callback: {e}")
+        await callback.message.edit_text(
+            "❌ Ошибка при загрузке логов.",
+            reply_markup=get_back_keyboard()
+        )
+        await callback.answer()
+
+
+# ============================================================
+#  КНОПКА НАЗАД В АДМИН-ПАНЕЛИ — ВОЗВРАЩАЕТ В ГЛАВНОЕ МЕНЮ
+# ============================================================
+
+@router.callback_query(F.data == "back_to_menu")
+async def back_to_menu(callback: CallbackQuery):
+    """Возврат в главное меню (для админа)"""
+    try:
+        if not is_admin(callback.from_user.id):
+            await callback.answer("❌ Доступ запрещён.", show_alert=True)
+            return
+
+        keyboard = get_admin_keyboard()
+
+        await callback.message.edit_text(
+            "🔐 <b>Административная панель</b>\n\n"
+            "Выберите действие:",
+            parse_mode=ParseMode.HTML,
+            reply_markup=keyboard
+        )
+        await callback.answer()
+
+    except Exception as e:
+        logger.error(f"Error in back_to_menu: {e}")
+        await callback.answer("❌ Ошибка", show_alert=True)
+
+
+# ============================================================
+#  РАССЫЛКА (FSM)
+# ============================================================
 
 @router.message(StateFilter(BroadcastStates.entering_message))
 async def process_broadcast_message(message: Message, state: FSMContext):
@@ -465,81 +484,43 @@ async def cancel_broadcast(callback: CallbackQuery, state: FSMContext):
 
 
 # ============================================================
-#  БЭКАП
+#  СТАТИСТИКА (КОМАНДА)
 # ============================================================
 
-@router.message(Command("admin_backup"))
-async def admin_backup(message: Message):
+@router.message(Command("admin_stats"))
+async def admin_stats(message: Message):
     try:
         if not is_admin(message.from_user.id):
             await message.answer("❌ Доступ запрещён.")
             return
 
-        await message.answer("⏳ Создание бэкапа...")
+        trainers = db.get_users_by_role(UserRole.TRAINER)
+        clients = db.get_users_by_role(UserRole.CLIENT)
+        all_users = db.get_all_users()
+        active_subscriptions = db.get_all_active_subscriptions()
+        today_measurements = db.get_daily_measurements_count()
 
-        backup_path = await backup_service.backup_database(compress=True)
+        response = (
+            "📊 <b>Статистика системы</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"👨‍🏫 <b>Тренеры:</b> {len(trainers)}\n"
+            f"👨‍🎓 <b>Ученики:</b> {len(clients)}\n"
+            f"👥 <b>Всего пользователей:</b> {len(all_users)}\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n"
+            f"💎 <b>Активных подписок (Pro):</b> {active_subscriptions}\n"
+            f"📊 <b>Замеров сегодня:</b> {today_measurements}\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📅 <b>Дата:</b> {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+        )
 
-        if not backup_path:
-            await message.answer("❌ Не удалось создать бэкап.")
-            return
-
-        await message.answer_document(
-            document=FSInputFile(backup_path),
-            caption=f"💾 <b>Бэкап базы данных</b>\n"
-                    f"📅 {datetime.now().strftime('%d.%m.%Y %H:%M')}",
+        await message.answer(
+            response,
             parse_mode=ParseMode.HTML,
             reply_markup=get_back_keyboard()
         )
 
-        logger.info(f"💾 Backup created by admin {message.from_user.id}: {backup_path}")
+        logger.info(f"📊 Admin stats viewed by {message.from_user.id}")
 
     except Exception as e:
-        logger.error(f"Error in admin_backup: {e}")
-        await message.answer("❌ Ошибка при создании бэкапа.")
-
-
-# ============================================================
-#  ЛОГИ
-# ============================================================
-
-@router.message(Command("admin_logs"))
-async def admin_logs(message: Message):
-    try:
-        if not is_admin(message.from_user.id):
-            await message.answer("❌ Доступ запрещён.")
-            return
-
-        from pathlib import Path
-
-        log_path = Path(Config.LOG_FILE)
-        if not log_path.exists():
-            await message.answer("❌ Файл логов не найден.")
-            return
-
-        with open(log_path, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
-            last_lines = lines[-100:] if len(lines) > 100 else lines
-
-        log_text = "".join(last_lines)
-
-        if len(log_text) > 4000:
-            await message.answer_document(
-                document=FSInputFile(log_path),
-                caption=f"📋 <b>Логи системы</b>\n"
-                        f"📅 {datetime.now().strftime('%d.%m.%Y %H:%M')}",
-                parse_mode=ParseMode.HTML,
-                reply_markup=get_back_keyboard()
-            )
-        else:
-            await message.answer(
-                f"📋 <b>Последние логи:</b>\n\n"
-                f"<code>{log_text}</code>",
-                parse_mode=ParseMode.HTML,
-                reply_markup=get_back_keyboard()
-            )
-
-        logger.info(f"📋 Logs viewed by admin {message.from_user.id}")
-
-    except Exception as e:
-        logger.error(f"Error in admin_logs: {e}")
-        await message.answer("❌ Ошибка при загрузке логов.")
+        logger.error(f"Error in admin_stats: {e}\n{traceback.format_exc()}")
+        await message.answer("❌ Ошибка при загрузке статистики.")
