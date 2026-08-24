@@ -134,30 +134,39 @@ class DatabaseService:
 
     def get_trainer_clients(self, trainer_id: int):
         with self._get_session() as session:
-            return session.query(User).join(
+            users = session.query(User).join(
                 TrainerClient, User.id == TrainerClient.client_id
             ).filter(
                 TrainerClient.trainer_id == trainer_id,
                 TrainerClient.is_active == True,
                 User.is_active == True
             ).all()
+            for user in users:
+                session.expunge(user)
+            return users
 
     def get_trainer_clients_full(self, trainer_id: int):
         with self._get_session() as session:
-            return session.query(TrainerClient).filter(
+            clients = session.query(TrainerClient).filter(
                 TrainerClient.trainer_id == trainer_id,
                 TrainerClient.is_active == True
             ).all()
+            for client in clients:
+                session.expunge(client)
+            return clients
 
     def get_client_trainers(self, client_id: int):
         with self._get_session() as session:
-            return session.query(User).join(
+            users = session.query(User).join(
                 TrainerClient, User.id == TrainerClient.trainer_id
             ).filter(
                 TrainerClient.client_id == client_id,
                 TrainerClient.is_active == True,
                 User.is_active == True
             ).all()
+            for user in users:
+                session.expunge(user)
+            return users
 
     def add_client_to_trainer(self, trainer_id: int, client_id: int) -> bool:
         with self._get_session() as session:
@@ -193,69 +202,69 @@ class DatabaseService:
                 TrainerClient.is_active == True
             ).first() is not None
 
-# ====================== MEASUREMENTS ======================
+    # ====================== MEASUREMENTS ======================
 
-def create_measurement(self, user_id: int, data: dict):
-    with self._get_session() as session:
-        m = Measurement(user_id=user_id, **data)
-        session.add(m)
-        session.flush()
-        session.expunge(m)
-        return m
-
-def get_measurements(self, user_id: int, days: int = 30):
-    cutoff = datetime.now() - timedelta(days=days)
-    with self._get_session() as session:
-        measurements = session.query(Measurement).filter(
-            Measurement.user_id == user_id,
-            Measurement.measured_at >= cutoff
-        ).order_by(Measurement.measured_at.asc()).all()
-        for m in measurements:
+    def create_measurement(self, user_id: int, data: dict):
+        with self._get_session() as session:
+            m = Measurement(user_id=user_id, **data)
+            session.add(m)
+            session.flush()
             session.expunge(m)
-        return measurements
+            return m
 
-def get_all_measurements(self, user_id: int, limit: int = None):
-    with self._get_session() as session:
-        query = session.query(Measurement).filter(
-            Measurement.user_id == user_id
-        ).order_by(Measurement.measured_at.desc())
-        if limit:
-            query = query.limit(limit)
-        measurements = query.all()
-        for m in measurements:
-            session.expunge(m)
-        return measurements
+    def get_measurements(self, user_id: int, days: int = 30):
+        cutoff = datetime.now() - timedelta(days=days)
+        with self._get_session() as session:
+            measurements = session.query(Measurement).filter(
+                Measurement.user_id == user_id,
+                Measurement.measured_at >= cutoff
+            ).order_by(Measurement.measured_at.asc()).all()
+            for m in measurements:
+                session.expunge(m)
+            return measurements
 
-def get_last_measurement(self, user_id: int):
-    with self._get_session() as session:
-        m = session.query(Measurement).filter(
-            Measurement.user_id == user_id
-        ).order_by(Measurement.measured_at.desc()).first()
-        if m:
-            session.expunge(m)
-        return m
+    def get_all_measurements(self, user_id: int, limit: int = None):
+        with self._get_session() as session:
+            query = session.query(Measurement).filter(
+                Measurement.user_id == user_id
+            ).order_by(Measurement.measured_at.desc())
+            if limit:
+                query = query.limit(limit)
+            measurements = query.all()
+            for m in measurements:
+                session.expunge(m)
+            return measurements
 
-def get_first_measurement(self, user_id: int):
-    with self._get_session() as session:
-        m = session.query(Measurement).filter(
-            Measurement.user_id == user_id
-        ).order_by(Measurement.measured_at.asc()).first()
-        if m:
-            session.expunge(m)
-        return m
+    def get_last_measurement(self, user_id: int):
+        with self._get_session() as session:
+            m = session.query(Measurement).filter(
+                Measurement.user_id == user_id
+            ).order_by(Measurement.measured_at.desc()).first()
+            if m:
+                session.expunge(m)
+            return m
 
-def get_measurement_stats(self, user_id: int, days: int = 30):
-    with self._get_session() as session:
-        from sqlalchemy import func
-        return session.query(
-            func.min(Measurement.weight).label('min_weight'),
-            func.max(Measurement.weight).label('max_weight'),
-            func.avg(Measurement.weight).label('avg_weight'),
-            func.count(Measurement.id).label('total')
-        ).filter(
-            Measurement.user_id == user_id,
-            Measurement.measured_at >= datetime.now() - timedelta(days=days)
-        ).first()
+    def get_first_measurement(self, user_id: int):
+        with self._get_session() as session:
+            m = session.query(Measurement).filter(
+                Measurement.user_id == user_id
+            ).order_by(Measurement.measured_at.asc()).first()
+            if m:
+                session.expunge(m)
+            return m
+
+    def get_measurement_stats(self, user_id: int, days: int = 30):
+        with self._get_session() as session:
+            from sqlalchemy import func
+            return session.query(
+                func.min(Measurement.weight).label('min_weight'),
+                func.max(Measurement.weight).label('max_weight'),
+                func.avg(Measurement.weight).label('avg_weight'),
+                func.count(Measurement.id).label('total')
+            ).filter(
+                Measurement.user_id == user_id,
+                Measurement.measured_at >= datetime.now() - timedelta(days=days)
+            ).first()
 
     # ====================== REMINDERS ======================
 
@@ -271,19 +280,25 @@ def get_measurement_stats(self, user_id: int, days: int = 30):
             )
             session.add(reminder)
             session.flush()
-            session.refresh(reminder)
+            session.expunge(reminder)
             return reminder
 
     def get_trainer_reminders(self, trainer_id: int):
         with self._get_session() as session:
-            return session.query(Reminder).filter(
+            reminders = session.query(Reminder).filter(
                 Reminder.trainer_id == trainer_id,
                 Reminder.is_active == True
             ).all()
+            for r in reminders:
+                session.expunge(r)
+            return reminders
 
     def get_reminder(self, reminder_id: int):
         with self._get_session() as session:
-            return session.query(Reminder).filter(Reminder.id == reminder_id).first()
+            reminder = session.query(Reminder).filter(Reminder.id == reminder_id).first()
+            if reminder:
+                session.expunge(reminder)
+            return reminder
 
     def update_reminder(self, reminder_id: int, **kwargs):
         with self._get_session() as session:
@@ -293,7 +308,7 @@ def get_measurement_stats(self, user_id: int, days: int = 30):
                     if hasattr(reminder, key):
                         setattr(reminder, key, value)
                 session.flush()
-                session.refresh(reminder)
+                session.expunge(reminder)
                 return reminder
             return None
 
@@ -311,16 +326,19 @@ def get_measurement_stats(self, user_id: int, days: int = 30):
             )
             session.add(log)
             session.flush()
-            session.refresh(log)
+            session.expunge(log)
             return log
 
     def get_reminder_logs(self, client_id: int, days: int = 30):
         cutoff = datetime.now() - timedelta(days=days)
         with self._get_session() as session:
-            return session.query(ReminderLog).filter(
+            logs = session.query(ReminderLog).filter(
                 ReminderLog.client_id == client_id,
                 ReminderLog.sent_at >= cutoff
             ).all()
+            for log in logs:
+                session.expunge(log)
+            return logs
 
     # ====================== BROADCAST ======================
 
@@ -329,7 +347,7 @@ def get_measurement_stats(self, user_id: int, days: int = 30):
             b = Broadcast(message=message, sent_by=sender_id, recipients_count=0)
             session.add(b)
             session.flush()
-            session.refresh(b)
+            session.expunge(b)
             return b.id
 
     def update_broadcast_count(self, broadcast_id: int, count: int):
@@ -340,18 +358,24 @@ def get_measurement_stats(self, user_id: int, days: int = 30):
 
     def get_broadcasts(self, limit: int = 10):
         with self._get_session() as session:
-            return session.query(Broadcast).order_by(
+            broadcasts = session.query(Broadcast).order_by(
                 Broadcast.sent_at.desc()
             ).limit(limit).all()
+            for b in broadcasts:
+                session.expunge(b)
+            return broadcasts
 
     # ====================== SUBSCRIPTIONS ======================
 
     def get_user_subscription(self, user_id: int):
         with self._get_session() as session:
-            return session.query(Subscription).filter(
+            sub = session.query(Subscription).filter(
                 Subscription.user_id == user_id,
                 Subscription.is_active == True
             ).first()
+            if sub:
+                session.expunge(sub)
+            return sub
 
     def set_trial_subscription(self, user_id: int, days: int = 7):
         with self._get_session() as session:
@@ -368,7 +392,7 @@ def get_measurement_stats(self, user_id: int, days: int = 30):
             )
             session.add(sub)
             session.flush()
-            session.refresh(sub)
+            session.expunge(sub)
             return sub
 
     def set_subscription(self, user_id: int, plan: str, days: int = 30):
@@ -386,7 +410,7 @@ def get_measurement_stats(self, user_id: int, days: int = 30):
             )
             session.add(sub)
             session.flush()
-            session.refresh(sub)
+            session.expunge(sub)
             return sub
 
     def cancel_subscription(self, user_id: int) -> bool:
@@ -414,10 +438,13 @@ def get_measurement_stats(self, user_id: int, days: int = 30):
 
     def get_expired_subscriptions(self):
         with self._get_session() as session:
-            return session.query(Subscription).filter(
+            subs = session.query(Subscription).filter(
                 Subscription.is_active == True,
                 Subscription.expires_at <= datetime.now()
             ).all()
+            for sub in subs:
+                session.expunge(sub)
+            return subs
 
     # ====================== STATISTICS ======================
 
