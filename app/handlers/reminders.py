@@ -13,7 +13,9 @@ from app.keyboards.inline import (
     get_days_of_week_keyboard,
     get_reminder_actions_keyboard
 )
+from app.models import UserRole
 from app.utils.logger import get_logger
+import traceback
 
 logger = get_logger(__name__)
 router = Router()
@@ -34,6 +36,8 @@ def init_reminder_service(service: ReminderService):
 
 
 def get_reminder_service() -> ReminderService:
+    if _reminder_service is None:
+        logger.warning("⚠️ Reminder service not initialized!")
     return _reminder_service
 
 
@@ -66,10 +70,17 @@ async def set_reminder(message: Message, state: FSMContext):
         await message.answer("❌ Ошибка при настройке напоминания.")
 
 
+# ============================================================
+#  ВЫБОР ДНЯ
+# ============================================================
+
 @router.callback_query(StateFilter(ReminderStates.choosing_day), F.data.startswith("reminder_day_"))
 async def process_day_selection(callback: CallbackQuery, state: FSMContext):
     try:
+        logger.info(f"📥 [reminder_day_] data: {callback.data}")
+        
         day_str = callback.data.split("_")[2]
+        logger.info(f"📥 day_str: {day_str}")
 
         if day_str == "daily":
             day = None
@@ -97,9 +108,15 @@ async def process_day_selection(callback: CallbackQuery, state: FSMContext):
         await callback.answer("❌ Ошибка", show_alert=True)
 
 
+# ============================================================
+#  ВЫБОР ВРЕМЕНИ
+# ============================================================
+
 @router.message(StateFilter(ReminderStates.choosing_time))
 async def process_time_selection(message: Message, state: FSMContext):
     try:
+        logger.info(f"📥 [process_time_selection] text: {message.text}")
+        
         time_str = message.text.strip()
 
         try:
@@ -123,8 +140,8 @@ async def process_time_selection(message: Message, state: FSMContext):
             await state.clear()
             return
 
-        # СОЗДАЁМ НАПОМИНАНИЕ В БД
         logger.info(f"📝 Creating reminder: trainer_id={user.id}, day={day}, time={time_str}")
+        
         reminder = db.create_reminder(user.id, day, time_str)
         logger.info(f"✅ Reminder created: {reminder}")
 
@@ -136,7 +153,6 @@ async def process_time_selection(message: Message, state: FSMContext):
             await state.clear()
             return
 
-        # ПЛАНИРУЕМ В СЕРВИСЕ
         reminder_service = get_reminder_service()
         logger.info(f"📝 Reminder service: {reminder_service}")
         
@@ -178,9 +194,12 @@ async def process_time_selection(message: Message, state: FSMContext):
         await message.answer(f"❌ Ошибка при создании напоминания: {str(e)[:200]}", reply_markup=get_cancel_keyboard())
         await state.clear()
 
+
 @router.callback_query(StateFilter(ReminderStates.choosing_time), F.data.startswith("reminder_time_"))
 async def process_time_callback(callback: CallbackQuery, state: FSMContext):
     try:
+        logger.info(f"📥 [reminder_time_] data: {callback.data}")
+        
         time_str = callback.data.split("_")[2]
 
         if time_str == "custom":
@@ -199,6 +218,7 @@ async def process_time_callback(callback: CallbackQuery, state: FSMContext):
             parse_mode=ParseMode.HTML
         )
 
+        # Имитируем ввод текста
         await process_time_selection(
             Message(
                 message_id=callback.message.message_id,
@@ -216,7 +236,47 @@ async def process_time_callback(callback: CallbackQuery, state: FSMContext):
 
 
 # ============================================================
-#  КОМАНДА /my_reminders
+#  ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+# ============================================================
+
+def get_day_name(day: int) -> str:
+    days = {
+        0: "Понедельник",
+        1: "Вторник",
+        2: "Среда",
+        3: "Четверг",
+        4: "Пятница",
+        5: "Суббота",
+        6: "Воскресенье",
+        None: "📅 Ежедневно"
+    }
+    return days.get(day, "Неизвестно")
+
+
+def get_time_selection_keyboard() -> InlineKeyboardMarkup:
+    kb = [
+        [
+            InlineKeyboardButton(text="08:00", callback_data="reminder_time_08:00"),
+            InlineKeyboardButton(text="09:00", callback_data="reminder_time_09:00"),
+            InlineKeyboardButton(text="10:00", callback_data="reminder_time_10:00")
+        ],
+        [
+            InlineKeyboardButton(text="18:00", callback_data="reminder_time_18:00"),
+            InlineKeyboardButton(text="19:00", callback_data="reminder_time_19:00"),
+            InlineKeyboardButton(text="20:00", callback_data="reminder_time_20:00")
+        ],
+        [
+            InlineKeyboardButton(text="🕐 Своё время", callback_data="reminder_time_custom")
+        ],
+        [
+            InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_reminder")
+        ]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=kb)
+
+
+# ============================================================
+#  /my_reminders
 # ============================================================
 
 @router.message(Command("my_reminders"))
@@ -391,43 +451,3 @@ async def back_to_reminders(callback: CallbackQuery):
     except Exception as e:
         logger.error(f"Error in back_to_reminders: {e}")
         await callback.answer("❌ Ошибка", show_alert=True)
-
-
-def get_day_name(day: int) -> str:
-    days = {
-        0: "Понедельник",
-        1: "Вторник",
-        2: "Среда",
-        3: "Четверг",
-        4: "Пятница",
-        5: "Суббота",
-        6: "Воскресенье",
-        None: "📅 Ежедневно"
-    }
-    return days.get(day, "Неизвестно")
-
-
-def get_time_selection_keyboard() -> InlineKeyboardMarkup:
-    kb = [
-        [
-            InlineKeyboardButton(text="08:00", callback_data="reminder_time_08:00"),
-            InlineKeyboardButton(text="09:00", callback_data="reminder_time_09:00"),
-            InlineKeyboardButton(text="10:00", callback_data="reminder_time_10:00")
-        ],
-        [
-            InlineKeyboardButton(text="18:00", callback_data="reminder_time_18:00"),
-            InlineKeyboardButton(text="19:00", callback_data="reminder_time_19:00"),
-            InlineKeyboardButton(text="20:00", callback_data="reminder_time_20:00")
-        ],
-        [
-            InlineKeyboardButton(text="🕐 Своё время", callback_data="reminder_time_custom")
-        ],
-        [
-            InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_reminder")
-        ]
-    ]
-    return InlineKeyboardMarkup(inline_keyboard=kb)
-
-def init_reminder_service(service):
-    global reminder_service
-    reminder_service = service
