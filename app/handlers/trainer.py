@@ -459,10 +459,18 @@ async def prompt_message_to_client(callback: CallbackQuery):
         text = f"✏️ Напишите сообщение для <b>{client.full_name or client.username}</b>:\n\n"
         text += "<i>Сообщение будет отправлено в личные сообщения ученику.</i>"
 
+        # Используем InlineKeyboardMarkup вместо ReplyKeyboardMarkup
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        cancel_keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_message")]
+            ]
+        )
+
         await callback.message.edit_text(
             text,
             parse_mode=ParseMode.HTML,
-            reply_markup=get_cancel_keyboard()
+            reply_markup=cancel_keyboard
         )
 
         # TODO: Добавить FSM для ожидания сообщения
@@ -473,4 +481,17 @@ async def prompt_message_to_client(callback: CallbackQuery):
         await callback.answer("❌ Неверный ID", show_alert=True)
     except Exception as e:
         logger.error(f"❌ Error in prompt_message_to_client: {e}")
+        await callback.answer("❌ Ошибка", show_alert=True)
+
+@router.callback_query(F.data == "cancel_message")
+async def cancel_message(callback: CallbackQuery):
+    """Отмена отправки сообщения"""
+    try:
+        await callback.message.edit_text(
+            "❌ Отправка сообщения отменена.",
+            reply_markup=get_back_keyboard()
+        )
+        await callback.answer()
+    except Exception as e:
+        logger.error(f"Error in cancel_message: {e}")
         await callback.answer("❌ Ошибка", show_alert=True)
