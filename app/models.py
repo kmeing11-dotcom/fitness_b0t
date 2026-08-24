@@ -28,7 +28,7 @@ class SubscriptionPlan(str, enum.Enum):
 
 class User(Base):
     __tablename__ = "users"
-
+    timezone = Column(String(50), default="Europe/Moscow")
     id = Column(Integer, primary_key=True)
     telegram_id = Column(BigInteger, unique=True, nullable=False, index=True)  # <-- ИЗМЕНЕНО на BigInteger
     username = Column(String(100), unique=True, nullable=True)
