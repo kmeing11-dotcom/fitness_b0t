@@ -584,25 +584,22 @@ async def cancel_message(callback: CallbackQuery, state: FSMContext):
 
 
 # ============================================================
-#  КНОПКА ЗАКРЫТЬ
+#  КНОПКА ЗАКРЫТЬ — ПРОСТО УБИРАЕТ КЛАВИАТУРУ
 # ============================================================
 
 @router.callback_query(F.data == "close")
 async def close_message(callback: CallbackQuery):
-    """Закрывает сообщение (удаляет или убирает клавиатуру)"""
+    """Закрывает сообщение — убирает клавиатуру"""
     try:
-        # Пробуем удалить сообщение
-        await callback.message.delete()
-        await callback.answer("🔒 Закрыто")
+        await callback.message.edit_reply_markup(reply_markup=None)
+        await callback.answer()  # тихий ответ, без всплывающих уведомлений
     except Exception as e:
-        logger.info(f"Could not delete message, trying to remove keyboard: {e}")
+        # Если не удалось убрать клавиатуру — пробуем удалить сообщение
         try:
-            # Если не удалось удалить, убираем клавиатуру
-            await callback.message.edit_reply_markup(reply_markup=None)
-            await callback.answer("🔒 Закрыто")
-        except Exception as e2:
-            logger.error(f"Error in close_message: {e2}")
-            await callback.answer("❌ Не удалось закрыть", show_alert=True)
+            await callback.message.delete()
+            await callback.answer()
+        except:
+            await callback.answer()  # тихо игнорируем
 
 
 # ============================================================
