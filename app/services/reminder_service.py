@@ -11,7 +11,7 @@ from app.config import Config
 from app.db import Session
 from app.models import User, UserRole, Reminder, ReminderLog, TrainerClient
 from app.utils.logger import get_logger
-from sqlalchemy import select
+import traceback
 
 logger = get_logger(__name__)
 
@@ -201,6 +201,8 @@ class ReminderService:
     async def _send_reminders_to_clients(self, trainer_id: int):
         """Отправляет напоминания всем клиентам тренера."""
         try:
+            logger.info(f"📤 Sending reminders to clients of trainer {trainer_id}")
+
             with Session() as session:
                 trainer_clients = session.query(TrainerClient).filter(
                     TrainerClient.trainer_id == trainer_id,
@@ -252,7 +254,7 @@ class ReminderService:
                 logger.info(f"✅ Sent {sent_count} reminders for trainer {trainer_id}")
 
         except Exception as e:
-            logger.error(f"Error in _send_reminders_to_clients: {e}")
+            logger.error(f"Error in _send_reminders_to_clients: {e}\n{traceback.format_exc()}")
 
     async def _schedule_followup(self, client_id: int, trainer_id: int):
         """Планирует повторное напоминание через 24 часа."""
@@ -260,7 +262,10 @@ class ReminderService:
         job_id = f"followup_{client_id}_{int(run_time.timestamp())}"
 
         if self.scheduler:
-            self.scheduler.remove_job(job_id)
+            try:
+                self.scheduler.remove_job(job_id)
+            except:
+                pass
 
         self.scheduler.add_job(
             self._send_followup_reminder,
@@ -275,6 +280,8 @@ class ReminderService:
     async def _send_followup_reminder(self, client_id: int, trainer_id: int):
         """Отправляет повторное напоминание клиенту."""
         try:
+            logger.info(f"📤 Sending followup to client {client_id}")
+
             with Session() as session:
                 client = session.query(User).filter(User.id == client_id).first()
                 if not client:
@@ -427,3 +434,12 @@ class ReminderService:
             logger.error(f"Job {event.job_id} failed: {event.exception}")
         else:
             logger.debug(f"Job {event.job_id} executed successfully")
+
+
+# ============================================================
+#  ТЕСТОВАЯ ФУНКЦИЯ ДЛЯ ПРОВЕРКИ
+# ============================================================
+
+async def test_send_reminder(reminder_service, trainer_id: int):
+    """Тестовая отправка напоминания (для отладки)"""
+    await reminder_service._send_reminders_to_clients(trainer_id)
