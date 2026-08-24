@@ -8,7 +8,7 @@ from datetime import datetime
 from app.services.db_service import DatabaseService
 from app.services.chart_service import ChartService
 from app.models import UserRole
-from app.keyboards.inline import get_cancel_keyboard, get_back_keyboard, get_stats_period_keyboard
+from app.keyboards.inline import get_cancel_keyboard, get_back_keyboard
 from app.utils.logger import get_logger
 import traceback
 
@@ -55,9 +55,10 @@ async def start_measurements(message: Message, state: FSMContext):
                 f"⚖️ Вес: {last_measurement.weight or '—'} кг\n"
             )
 
+        # Убрали "пропустить" из текста
         await message.answer(
             f"📝 <b>Введите замеры</b>\n\n"
-            f"На каждом шаге введите значение или отправьте 'пропустить'.\n"
+            f"На каждом шаге введите значение.\n"
             f"{last_text}\n"
             f"⚖️ <b>Шаг 1/5</b>: Введите вес (в кг):",
             parse_mode=ParseMode.HTML,
@@ -71,7 +72,7 @@ async def start_measurements(message: Message, state: FSMContext):
 
 
 # ============================================================
-#  ОБРАБОТКА ЗАМЕРОВ
+#  ОБРАБОТКА ЗАМЕРОВ (без "пропустить")
 # ============================================================
 
 @router.message(StateFilter(MeasurementStates.weight))
@@ -81,14 +82,32 @@ async def process_weight(message: Message, state: FSMContext):
             await cancel_measurements(message, state)
             return
 
-        value = await process_measurement_value(message, "weight")
-        if value is None:
+        try:
+            weight = float(message.text.replace(',', '.'))
+        except ValueError:
+            await message.answer(
+                "❌ Пожалуйста, введите корректное число (например, 75.5).",
+                reply_markup=get_cancel_keyboard()
+            )
             return
 
-        await state.update_data(weight=value)
+        if weight <= 0:
+            await message.answer(
+                "❌ Значение должно быть больше 0.",
+                reply_markup=get_cancel_keyboard()
+            )
+            return
+
+        if weight < 20 or weight > 500:
+            await message.answer(
+                "❌ Вес должен быть от 20 до 500 кг.",
+                reply_markup=get_cancel_keyboard()
+            )
+            return
+
+        await state.update_data(weight=round(weight, 1))
         await message.answer(
-            "📏 <b>Шаг 2/5</b>: Введите обхват талии (в см):\n"
-            "<i>Или отправьте 'пропустить'</i>",
+            "📏 <b>Шаг 2/5</b>: Введите обхват талии (в см):",
             parse_mode=ParseMode.HTML,
             reply_markup=get_cancel_keyboard()
         )
@@ -106,14 +125,32 @@ async def process_waist(message: Message, state: FSMContext):
             await cancel_measurements(message, state)
             return
 
-        value = await process_measurement_value(message, "waist")
-        if value is None:
+        try:
+            waist = float(message.text.replace(',', '.'))
+        except ValueError:
+            await message.answer(
+                "❌ Пожалуйста, введите корректное число (например, 85.5).",
+                reply_markup=get_cancel_keyboard()
+            )
             return
 
-        await state.update_data(waist=value)
+        if waist <= 0:
+            await message.answer(
+                "❌ Значение должно быть больше 0.",
+                reply_markup=get_cancel_keyboard()
+            )
+            return
+
+        if waist < 20 or waist > 300:
+            await message.answer(
+                "❌ Талия должна быть от 20 до 300 см.",
+                reply_markup=get_cancel_keyboard()
+            )
+            return
+
+        await state.update_data(waist=round(waist, 1))
         await message.answer(
-            "📏 <b>Шаг 3/5</b>: Введите обхват бедер (в см):\n"
-            "<i>Или отправьте 'пропустить'</i>",
+            "📏 <b>Шаг 3/5</b>: Введите обхват бедер (в см):",
             parse_mode=ParseMode.HTML,
             reply_markup=get_cancel_keyboard()
         )
@@ -131,14 +168,32 @@ async def process_hips(message: Message, state: FSMContext):
             await cancel_measurements(message, state)
             return
 
-        value = await process_measurement_value(message, "hips")
-        if value is None:
+        try:
+            hips = float(message.text.replace(',', '.'))
+        except ValueError:
+            await message.answer(
+                "❌ Пожалуйста, введите корректное число (например, 95.5).",
+                reply_markup=get_cancel_keyboard()
+            )
             return
 
-        await state.update_data(hips=value)
+        if hips <= 0:
+            await message.answer(
+                "❌ Значение должно быть больше 0.",
+                reply_markup=get_cancel_keyboard()
+            )
+            return
+
+        if hips < 20 or hips > 300:
+            await message.answer(
+                "❌ Бедра должны быть от 20 до 300 см.",
+                reply_markup=get_cancel_keyboard()
+            )
+            return
+
+        await state.update_data(hips=round(hips, 1))
         await message.answer(
-            "📏 <b>Шаг 4/5</b>: Введите обхват груди (в см):\n"
-            "<i>Или отправьте 'пропустить'</i>",
+            "📏 <b>Шаг 4/5</b>: Введите обхват груди (в см):",
             parse_mode=ParseMode.HTML,
             reply_markup=get_cancel_keyboard()
         )
@@ -156,14 +211,32 @@ async def process_chest(message: Message, state: FSMContext):
             await cancel_measurements(message, state)
             return
 
-        value = await process_measurement_value(message, "chest")
-        if value is None:
+        try:
+            chest = float(message.text.replace(',', '.'))
+        except ValueError:
+            await message.answer(
+                "❌ Пожалуйста, введите корректное число (например, 100.5).",
+                reply_markup=get_cancel_keyboard()
+            )
             return
 
-        await state.update_data(chest=value)
+        if chest <= 0:
+            await message.answer(
+                "❌ Значение должно быть больше 0.",
+                reply_markup=get_cancel_keyboard()
+            )
+            return
+
+        if chest < 20 or chest > 300:
+            await message.answer(
+                "❌ Грудь должна быть от 20 до 300 см.",
+                reply_markup=get_cancel_keyboard()
+            )
+            return
+
+        await state.update_data(chest=round(chest, 1))
         await message.answer(
-            "💪 <b>Шаг 5/5</b>: Введите обхват бицепса (в см):\n"
-            "<i>Или отправьте 'пропустить'</i>",
+            "💪 <b>Шаг 5/5</b>: Введите обхват бицепса (в см):",
             parse_mode=ParseMode.HTML,
             reply_markup=get_cancel_keyboard()
         )
@@ -181,11 +254,30 @@ async def process_biceps(message: Message, state: FSMContext):
             await cancel_measurements(message, state)
             return
 
-        value = await process_measurement_value(message, "biceps")
-        if value is None:
+        try:
+            biceps = float(message.text.replace(',', '.'))
+        except ValueError:
+            await message.answer(
+                "❌ Пожалуйста, введите корректное число (например, 35.5).",
+                reply_markup=get_cancel_keyboard()
+            )
             return
 
-        await state.update_data(biceps=value)
+        if biceps <= 0:
+            await message.answer(
+                "❌ Значение должно быть больше 0.",
+                reply_markup=get_cancel_keyboard()
+            )
+            return
+
+        if biceps < 5 or biceps > 100:
+            await message.answer(
+                "❌ Бицепс должен быть от 5 до 100 см.",
+                reply_markup=get_cancel_keyboard()
+            )
+            return
+
+        await state.update_data(biceps=round(biceps, 1))
 
         data = await state.get_data()
 
@@ -241,52 +333,6 @@ async def process_biceps(message: Message, state: FSMContext):
         await state.clear()
 
 
-# ============================================================
-#  ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ
-# ============================================================
-
-async def process_measurement_value(message: Message, field: str):
-    text = message.text.strip().lower()
-
-    if text == "пропустить":
-        return None
-
-    text = text.replace(',', '.')
-
-    try:
-        value = float(text)
-
-        if value <= 0:
-            await message.answer(
-                "❌ Значение должно быть больше 0. Пожалуйста, введите корректное число или 'пропустить'.",
-                reply_markup=get_cancel_keyboard()
-            )
-            return None
-
-        if field == "weight" and (value < 20 or value > 500):
-            await message.answer(
-                "❌ Вес должен быть от 20 до 500 кг. Пожалуйста, введите корректное значение или 'пропустить'.",
-                reply_markup=get_cancel_keyboard()
-            )
-            return None
-
-        if field in ["waist", "hips", "chest", "biceps"] and (value < 10 or value > 300):
-            await message.answer(
-                f"❌ Значение должно быть от 10 до 300 см. Пожалуйста, введите корректное значение или 'пропустить'.",
-                reply_markup=get_cancel_keyboard()
-            )
-            return None
-
-        return round(value, 1)
-
-    except ValueError:
-        await message.answer(
-            "❌ Пожалуйста, введите корректное число (например, 75.5) или 'пропустить'.",
-            reply_markup=get_cancel_keyboard()
-        )
-        return None
-
-
 async def cancel_measurements(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(
@@ -296,7 +342,7 @@ async def cancel_measurements(message: Message, state: FSMContext):
 
 
 # ============================================================
-#  КОМАНДА /my_progress
+#  /my_progress
 # ============================================================
 
 @router.message(Command("my_progress"))
