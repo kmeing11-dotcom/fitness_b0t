@@ -109,7 +109,11 @@ async def back_to_clients(callback: CallbackQuery, state: FSMContext):
 
         from app.keyboards.inline import get_trainer_menu_keyboard
 
-        await callback.message.edit_text(
+        # Удаляем старое сообщение с inline-клавиатурой
+        await callback.message.delete()
+        
+        # Отправляем новое с Reply-клавиатурой
+        await callback.message.answer(
             f"👋 <b>Главное меню</b>\n\n"
             f"Добро пожаловать, {trainer.full_name or 'Тренер'}!",
             parse_mode=ParseMode.HTML,
@@ -120,7 +124,6 @@ async def back_to_clients(callback: CallbackQuery, state: FSMContext):
     except Exception as e:
         logger.error(f"❌ Error in back_to_clients: {e}")
         await callback.answer("❌ Ошибка", show_alert=True)
-
 
 @router.callback_query(F.data.startswith("page_"))
 async def page_clients(callback: CallbackQuery):
