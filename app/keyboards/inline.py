@@ -60,7 +60,7 @@ def get_back_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_clients")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=kb)
-
+    
 def get_yes_no_keyboard() -> ReplyKeyboardMarkup:
     """Клавиатура Да/Нет"""
     kb = [
@@ -457,3 +457,18 @@ def get_action_from_callback(callback_data: str) -> tuple:
     elif len(parts) == 3:
         return (parts[0], parts[1], parts[2])
     return (callback_data, None, None)
+
+
+def get_cancel_inline_keyboard() -> InlineKeyboardMarkup:
+    """Inline-клавиатура с кнопкой 'Отмена'"""
+    kb = [
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_message")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=kb)
+
+
+
+def get_cancel_reply_keyboard() -> ReplyKeyboardMarkup:
+    """Reply-клавиатура с кнопкой 'Отмена' (для обычных сообщений)"""
+    kb = [[KeyboardButton(text="❌ Отмена")]]
+    return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True, one_time_keyboard=True)
