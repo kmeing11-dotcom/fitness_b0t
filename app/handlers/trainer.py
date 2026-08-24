@@ -95,7 +95,6 @@ async def show_client_info(callback: CallbackQuery):
         await callback.answer("❌ Ошибка", show_alert=True)
 
 
-
 @router.callback_query(F.data == "back_to_clients")
 async def back_to_clients(callback: CallbackQuery, state: FSMContext):
     """Возвращает в главное меню тренера"""
@@ -117,6 +116,11 @@ async def back_to_clients(callback: CallbackQuery, state: FSMContext):
             reply_markup=get_trainer_menu_keyboard()
         )
         await callback.answer()
+
+    except Exception as e:
+        logger.error(f"❌ Error in back_to_clients: {e}")
+        await callback.answer("❌ Ошибка", show_alert=True)
+
 
 @router.callback_query(F.data.startswith("page_"))
 async def page_clients(callback: CallbackQuery):
@@ -345,7 +349,6 @@ async def view_client_chart(callback: CallbackQuery):
             await callback.answer()
             return
 
-        # ⏳ Уведомление о начале генерации
         await callback.message.edit_text(
             "⏳ Генерация графика... Это может занять несколько секунд.",
             reply_markup=get_back_keyboard()
@@ -408,7 +411,6 @@ async def generate_client_report(callback: CallbackQuery):
             await callback.answer()
             return
 
-        # ⏳ Уведомление о начале генерации
         await callback.message.edit_text(
             "⏳ Генерация отчёта... Это может занять несколько секунд.",
             reply_markup=get_back_keyboard()
@@ -463,7 +465,6 @@ async def generate_client_report(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("msg_"))
 async def prompt_message_to_client(callback: CallbackQuery, state: FSMContext):
     try:
-        # Проверяем, что это не "msg_select"
         if callback.data == "msg_select" or callback.data.startswith("msg_select_"):
             await callback.answer("❌ Выберите ученика из списка.", show_alert=True)
             return
@@ -486,13 +487,11 @@ async def prompt_message_to_client(callback: CallbackQuery, state: FSMContext):
             await callback.answer("❌ Это не ваш ученик", show_alert=True)
             return
 
-        # Сохраняем client_id в состоянии
         await state.update_data(client_id=client_id, client_name=client.full_name or client.username)
 
         text = f"✏️ Напишите сообщение для <b>{client.full_name or client.username}</b>:\n\n"
         text += "<i>Отправьте текст сообщения. Чтобы отменить, нажмите кнопку ниже.</i>"
 
-        # Inline-клавиатура для отмены
         cancel_keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_message")]
@@ -518,7 +517,6 @@ async def prompt_message_to_client(callback: CallbackQuery, state: FSMContext):
 
 @router.message(StateFilter(MessageStates.waiting_for_message))
 async def send_message_to_client(message: Message, state: FSMContext):
-    """Отправляет сообщение ученику"""
     try:
         data = await state.get_data()
         client_id = data.get('client_id')
@@ -535,21 +533,18 @@ async def send_message_to_client(message: Message, state: FSMContext):
             await state.clear()
             return
 
-        # Отправляем сообщение ученику
         await message.bot.send_message(
             chat_id=client.telegram_id,
             text=f"📨 <b>Сообщение от тренера</b>\n\n{message.text}",
             parse_mode=ParseMode.HTML
         )
 
-        # Подтверждение тренеру
         await message.answer(
             f"✅ Сообщение отправлено ученику <b>{client_name}</b>!",
             parse_mode=ParseMode.HTML,
             reply_markup=get_back_keyboard()
         )
 
-        # Очищаем состояние
         await state.clear()
 
     except Exception as e:
@@ -560,7 +555,6 @@ async def send_message_to_client(message: Message, state: FSMContext):
 
 @router.callback_query(F.data == "cancel_message")
 async def cancel_message(callback: CallbackQuery, state: FSMContext):
-    """Отмена отправки сообщения"""
     try:
         await state.clear()
         await callback.message.edit_text(
@@ -574,28 +568,26 @@ async def cancel_message(callback: CallbackQuery, state: FSMContext):
 
 
 # ============================================================
-#  КНОПКА ЗАКРЫТЬ — ПРОСТО УБИРАЕТ КЛАВИАТУРУ
+#  КНОПКА ЗАКРЫТЬ
 # ============================================================
 
 @router.callback_query(F.data == "close")
 async def close_message(callback: CallbackQuery):
-    """Закрывает сообщение — удаляет его полностью"""
     try:
         await callback.message.delete()
-    except Exception as e:
-        # Если не удалось удалить — убираем клавиатуру
+    except Exception:
         try:
             await callback.message.edit_reply_markup(reply_markup=None)
         except:
             pass
-    await callback.answer()  # тихий ответ
+    await callback.answer()
+
 
 # ============================================================
-#  УНИВЕРСАЛЬНЫЙ ОБРАБОТЧИК ДЛЯ НЕИЗВЕСТНЫХ CALLBACK
+#  УНИВЕРСАЛЬНЫЙ ОБРАБОТЧИК
 # ============================================================
 
 @router.callback_query()
 async def catch_all_callbacks(callback: CallbackQuery):
-    """Ловит все callback-запросы, которые не обработаны другими хендлерами"""
     logger.warning(f"⚠️ [UNHANDLED CALLBACK] data: {callback.data}")
     await callback.answer(f"❌ Неизвестная команда", show_alert=True)
