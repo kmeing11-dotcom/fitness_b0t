@@ -100,6 +100,8 @@ async def back_to_clients(callback: CallbackQuery, state: FSMContext):
     try:
         await state.clear()
         logger.info(f"📥 [back_to_clients]")
+        
+        # Проверяем, откуда пришли — если из информации о клиенте, возвращаемся к списку
         trainer = db.get_user_by_telegram(callback.from_user.id)
         if not trainer:
             await callback.answer("❌ Тренер не найден", show_alert=True)
@@ -126,7 +128,6 @@ async def back_to_clients(callback: CallbackQuery, state: FSMContext):
     except Exception as e:
         logger.error(f"❌ Error in back_to_clients: {e}")
         await callback.answer("❌ Ошибка", show_alert=True)
-
 
 @router.callback_query(F.data.startswith("page_"))
 async def page_clients(callback: CallbackQuery):
