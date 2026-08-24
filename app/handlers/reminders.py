@@ -109,53 +109,8 @@ async def process_day_selection(callback: CallbackQuery, state: FSMContext):
 
 
 # ============================================================
-#  ВЫБОР ВРЕМЕНИ
+#  ВЫБОР ВРЕМЕНИ (СВОЁ ВРЕМЯ + ГОТОВЫЕ КНОПКИ)
 # ============================================================
-
-
-@router.callback_query(StateFilter(ReminderStates.choosing_time), F.data.startswith("reminder_time_"))
-async def process_time_callback(callback: CallbackQuery, state: FSMContext):
-    try:
-        logger.info(f"📥 [reminder_time_] data: {callback.data}")
-        
-        time_str = callback.data.split("_")[2]
-
-        if time_str == "custom":
-            # Показываем сообщение с просьбой ввести время
-            await callback.message.edit_text(
-                "🕐 Введите время в формате <b>ЧЧ:ММ</b>\n"
-                "Пример: 10:00\n\n"
-                "<i>Или нажмите кнопку отмены.</i>",
-                parse_mode=ParseMode.HTML,
-                reply_markup=get_cancel_keyboard()
-            )
-            # Остаёмся в том же состоянии, чтобы обработать текст
-            await callback.answer()
-            return
-
-        # Если выбрано готовое время — подставляем
-        await callback.message.edit_text(
-            f"✅ Выбрано время: <b>{time_str}</b>\n\n"
-            "Подтверждаю создание напоминания...",
-            parse_mode=ParseMode.HTML
-        )
-
-        # Имитируем ввод текста
-        await process_time_selection(
-            Message(
-                message_id=callback.message.message_id,
-                from_user=callback.from_user,
-                chat=callback.message.chat,
-                text=time_str
-            ),
-            state
-        )
-        await callback.answer()
-
-    except Exception as e:
-        logger.error(f"Error in process_time_callback: {e}")
-        await callback.answer("❌ Ошибка", show_alert=True)
-
 
 @router.message(StateFilter(ReminderStates.choosing_time))
 async def process_time_selection(message: Message, state: FSMContext):
@@ -164,6 +119,7 @@ async def process_time_selection(message: Message, state: FSMContext):
         
         time_str = message.text.strip()
 
+        # Проверяем формат
         try:
             datetime.strptime(time_str, "%H:%M")
         except ValueError:
@@ -248,11 +204,18 @@ async def process_time_callback(callback: CallbackQuery, state: FSMContext):
         time_str = callback.data.split("_")[2]
 
         if time_str == "custom":
+            # Inline-клавиатура для отмены
+            cancel_inline_keyboard = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_reminder")]
+                ]
+            )
             await callback.message.edit_text(
                 "🕐 Введите время в формате <b>ЧЧ:ММ</b>\n"
-                "Пример: 10:00",
+                "Пример: 10:00\n\n"
+                "<i>Или нажмите кнопку отмены.</i>",
                 parse_mode=ParseMode.HTML,
-                reply_markup=get_cancel_keyboard()
+                reply_markup=cancel_inline_keyboard
             )
             await callback.answer()
             return
@@ -263,7 +226,6 @@ async def process_time_callback(callback: CallbackQuery, state: FSMContext):
             parse_mode=ParseMode.HTML
         )
 
-        # Имитируем ввод текста
         await process_time_selection(
             Message(
                 message_id=callback.message.message_id,
@@ -277,6 +239,25 @@ async def process_time_callback(callback: CallbackQuery, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Error in process_time_callback: {e}")
+        await callback.answer("❌ Ошибка", show_alert=True)
+
+
+# ============================================================
+#  ОТМЕНА СОЗДАНИЯ НАПОМИНАНИЯ
+# ============================================================
+
+@router.callback_query(F.data == "cancel_reminder")
+async def cancel_reminder(callback: CallbackQuery, state: FSMContext):
+    """Отмена создания напоминания"""
+    try:
+        await state.clear()
+        await callback.message.edit_text(
+            "❌ Создание напоминания отменено.",
+            reply_markup=get_back_keyboard()
+        )
+        await callback.answer()
+    except Exception as e:
+        logger.error(f"Error in cancel_reminder: {e}")
         await callback.answer("❌ Ошибка", show_alert=True)
 
 
@@ -377,6 +358,10 @@ async def my_reminders(message: Message):
         logger.error(f"Error in my_reminders: {e}")
         await message.answer("❌ Ошибка при загрузке напоминаний.")
 
+
+# ============================================================
+#  УПРАВЛЕНИЕ НАПОМИНАНИЯМИ
+# ============================================================
 
 @router.callback_query(F.data.startswith("reminder_manage_"))
 async def manage_reminder(callback: CallbackQuery):
