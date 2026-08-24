@@ -589,18 +589,16 @@ async def cancel_message(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "close")
 async def close_message(callback: CallbackQuery):
-    """Закрывает сообщение — убирает клавиатуру"""
+    """Закрывает сообщение — удаляет его полностью"""
     try:
-        await callback.message.edit_reply_markup(reply_markup=None)
-        await callback.answer()  # тихий ответ, без всплывающих уведомлений
+        await callback.message.delete()
     except Exception as e:
-        # Если не удалось убрать клавиатуру — пробуем удалить сообщение
+        # Если не удалось удалить — убираем клавиатуру
         try:
-            await callback.message.delete()
-            await callback.answer()
+            await callback.message.edit_reply_markup(reply_markup=None)
         except:
-            await callback.answer()  # тихо игнорируем
-
+            pass
+    await callback.answer()  # тихий ответ
 
 # ============================================================
 #  УНИВЕРСАЛЬНЫЙ ОБРАБОТЧИК ДЛЯ НЕИЗВЕСТНЫХ CALLBACK
