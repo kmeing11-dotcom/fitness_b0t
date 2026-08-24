@@ -472,3 +472,25 @@ def get_cancel_reply_keyboard() -> ReplyKeyboardMarkup:
     """Reply-клавиатура с кнопкой 'Отмена' (для обычных сообщений)"""
     kb = [[KeyboardButton(text="❌ Отмена")]]
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True, one_time_keyboard=True)
+
+
+def get_admin_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура администратора"""
+    kb = [
+        [
+            InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats"),
+            InlineKeyboardButton(text="👥 Пользователи", callback_data="admin_users")
+        ],
+        [
+            InlineKeyboardButton(text="📨 Рассылка", callback_data="admin_broadcast"),
+            InlineKeyboardButton(text="💾 Бэкап", callback_data="admin_backup")
+        ],
+        [
+            InlineKeyboardButton(text="📋 Логи", callback_data="admin_logs"),
+            InlineKeyboardButton(text="💎 Подписки", callback_data="admin_subscriptions")
+        ],
+        [
+            InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_menu")
+        ]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=kb)
