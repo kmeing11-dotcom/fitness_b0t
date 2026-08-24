@@ -112,6 +112,51 @@ async def process_day_selection(callback: CallbackQuery, state: FSMContext):
 #  ВЫБОР ВРЕМЕНИ
 # ============================================================
 
+
+@router.callback_query(StateFilter(ReminderStates.choosing_time), F.data.startswith("reminder_time_"))
+async def process_time_callback(callback: CallbackQuery, state: FSMContext):
+    try:
+        logger.info(f"📥 [reminder_time_] data: {callback.data}")
+        
+        time_str = callback.data.split("_")[2]
+
+        if time_str == "custom":
+            # Показываем сообщение с просьбой ввести время
+            await callback.message.edit_text(
+                "🕐 Введите время в формате <b>ЧЧ:ММ</b>\n"
+                "Пример: 10:00\n\n"
+                "<i>Или нажмите кнопку отмены.</i>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_cancel_keyboard()
+            )
+            # Остаёмся в том же состоянии, чтобы обработать текст
+            await callback.answer()
+            return
+
+        # Если выбрано готовое время — подставляем
+        await callback.message.edit_text(
+            f"✅ Выбрано время: <b>{time_str}</b>\n\n"
+            "Подтверждаю создание напоминания...",
+            parse_mode=ParseMode.HTML
+        )
+
+        # Имитируем ввод текста
+        await process_time_selection(
+            Message(
+                message_id=callback.message.message_id,
+                from_user=callback.from_user,
+                chat=callback.message.chat,
+                text=time_str
+            ),
+            state
+        )
+        await callback.answer()
+
+    except Exception as e:
+        logger.error(f"Error in process_time_callback: {e}")
+        await callback.answer("❌ Ошибка", show_alert=True)
+
+
 @router.message(StateFilter(ReminderStates.choosing_time))
 async def process_time_selection(message: Message, state: FSMContext):
     try:
