@@ -123,7 +123,10 @@ async def process_time_selection(message: Message, state: FSMContext):
             await state.clear()
             return
 
+        # СОЗДАЁМ НАПОМИНАНИЕ В БД
+        logger.info(f"📝 Creating reminder: trainer_id={user.id}, day={day}, time={time_str}")
         reminder = db.create_reminder(user.id, day, time_str)
+        logger.info(f"✅ Reminder created: {reminder}")
 
         if not reminder:
             await message.answer(
@@ -133,7 +136,10 @@ async def process_time_selection(message: Message, state: FSMContext):
             await state.clear()
             return
 
+        # ПЛАНИРУЕМ В СЕРВИСЕ
         reminder_service = get_reminder_service()
+        logger.info(f"📝 Reminder service: {reminder_service}")
+        
         if reminder_service:
             try:
                 await reminder_service.schedule_reminder(
@@ -149,6 +155,12 @@ async def process_time_selection(message: Message, state: FSMContext):
                     "⚠️ Напоминание создано в БД, но не запланировано.\n"
                     "Оно будет восстановлено при перезапуске бота."
                 )
+        else:
+            logger.error("❌ Reminder service is None!")
+            await message.answer(
+                "⚠️ Сервис напоминаний не инициализирован.\n"
+                "Напоминание сохранено в БД и будет активировано позже."
+            )
 
         day_name = get_day_name(day)
         await message.answer(
@@ -162,10 +174,9 @@ async def process_time_selection(message: Message, state: FSMContext):
         await state.clear()
 
     except Exception as e:
-        logger.error(f"Error in process_time_selection: {e}")
-        await message.answer("❌ Ошибка при создании напоминания.", reply_markup=get_cancel_keyboard())
+        logger.error(f"❌ Error in process_time_selection: {e}\n{traceback.format_exc()}")
+        await message.answer(f"❌ Ошибка при создании напоминания: {str(e)[:200]}", reply_markup=get_cancel_keyboard())
         await state.clear()
-
 
 @router.callback_query(StateFilter(ReminderStates.choosing_time), F.data.startswith("reminder_time_"))
 async def process_time_callback(callback: CallbackQuery, state: FSMContext):
