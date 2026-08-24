@@ -578,3 +578,18 @@ async def catch_all_callbacks(callback: CallbackQuery):
     """Ловит все callback-запросы, которые не обработаны другими хендлерами"""
     logger.warning(f"⚠️ [UNHANDLED CALLBACK] data: {callback.data}")
     await callback.answer(f"❌ Неизвестная команда", show_alert=True)
+
+@router.callback_query(F.data == "close")
+async def close_message(callback: CallbackQuery):
+    """Закрывает текущее сообщение (удаляет или редактирует)"""
+    try:
+        await callback.message.delete()  # Удаляет сообщение
+        await callback.answer()
+    except Exception as e:
+        logger.error(f"Error in close_message: {e}")
+        try:
+            # Если не удалось удалить, пробуем отредактировать
+            await callback.message.edit_text("🔒 Сообщение закрыто.")
+            await callback.answer()
+        except:
+            await callback.answer("❌ Ошибка", show_alert=True)
