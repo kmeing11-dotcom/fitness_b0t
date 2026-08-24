@@ -17,7 +17,14 @@ logger = get_logger(__name__)
 router = Router()
 db = DatabaseService()
 
-
+@router.callback_query()
+async def log_all_callbacks(callback: CallbackQuery):
+    """Логирует все callback запросы для отладки"""
+    logger.info(f"📥 [ALL] Callback data: {callback.data}")
+    logger.info(f"📥 [ALL] From user: {callback.from_user.id}")
+    # Пропускаем дальше, чтобы другие обработчики тоже сработали
+    await callback.continue_propagation()
+    
 @router.callback_query(F.data.startswith("info_"))
 async def show_client_info(callback: CallbackQuery):
     try:
