@@ -209,7 +209,7 @@ def get_days_of_week_keyboard() -> InlineKeyboardMarkup:
         row.append(
             InlineKeyboardButton(
                 text=name,
-                callback_data=f"reminder_day_{value}"
+                callback_data=f"reminder_day_{value}"  # <-- ЭТО ДОЛЖНО БЫТЬ ТАК
             )
         )
         if len(row) == 4:
@@ -218,7 +218,6 @@ def get_days_of_week_keyboard() -> InlineKeyboardMarkup:
     if row:
         kb.append(row)
 
-    # Ежедневное напоминание
     kb.append([
         InlineKeyboardButton(
             text="📅 Ежедневно",
