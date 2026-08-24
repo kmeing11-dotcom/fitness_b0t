@@ -489,9 +489,16 @@ async def prompt_message_to_client(callback: CallbackQuery):
 async def cancel_message(callback: CallbackQuery):
     """Отмена отправки сообщения"""
     try:
+        # Используем Inline-клавиатуру
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        back_keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_clients")]
+            ]
+        )
         await callback.message.edit_text(
             "❌ Отправка сообщения отменена.",
-            reply_markup=get_back_keyboard()
+            reply_markup=back_keyboard
         )
         await callback.answer()
     except Exception as e:
