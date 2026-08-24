@@ -98,7 +98,7 @@ async def show_client_info(callback: CallbackQuery):
 @router.callback_query(F.data == "back_to_clients")
 async def back_to_clients(callback: CallbackQuery, state: FSMContext):
     try:
-        await state.clear()  # Очищаем состояние
+        await state.clear()
         logger.info(f"📥 [back_to_clients]")
         trainer = db.get_user_by_telegram(callback.from_user.id)
         if not trainer:
@@ -355,6 +355,13 @@ async def view_client_chart(callback: CallbackQuery):
             await callback.answer()
             return
 
+        # ⏳ Уведомление о начале генерации
+        await callback.message.edit_text(
+            "⏳ Генерация графика... Это может занять несколько секунд.",
+            reply_markup=get_back_keyboard()
+        )
+        await callback.answer()
+
         chart_service = ChartService()
         chart_data = await chart_service.generate_stats_chart_bytes(client_id, measurements)
 
@@ -410,6 +417,13 @@ async def generate_client_report(callback: CallbackQuery):
             )
             await callback.answer()
             return
+
+        # ⏳ Уведомление о начале генерации
+        await callback.message.edit_text(
+            "⏳ Генерация отчёта... Это может занять несколько секунд.",
+            reply_markup=get_back_keyboard()
+        )
+        await callback.answer()
 
         chart_service = ChartService()
         chart_path = await chart_service.generate_report_chart(client_id, measurements)
@@ -570,6 +584,28 @@ async def cancel_message(callback: CallbackQuery, state: FSMContext):
 
 
 # ============================================================
+#  КНОПКА ЗАКРЫТЬ
+# ============================================================
+
+@router.callback_query(F.data == "close")
+async def close_message(callback: CallbackQuery):
+    """Закрывает сообщение (удаляет или убирает клавиатуру)"""
+    try:
+        # Пробуем удалить сообщение
+        await callback.message.delete()
+        await callback.answer("🔒 Закрыто")
+    except Exception as e:
+        logger.info(f"Could not delete message, trying to remove keyboard: {e}")
+        try:
+            # Если не удалось удалить, убираем клавиатуру
+            await callback.message.edit_reply_markup(reply_markup=None)
+            await callback.answer("🔒 Закрыто")
+        except Exception as e2:
+            logger.error(f"Error in close_message: {e2}")
+            await callback.answer("❌ Не удалось закрыть", show_alert=True)
+
+
+# ============================================================
 #  УНИВЕРСАЛЬНЫЙ ОБРАБОТЧИК ДЛЯ НЕИЗВЕСТНЫХ CALLBACK
 # ============================================================
 
@@ -578,18 +614,3 @@ async def catch_all_callbacks(callback: CallbackQuery):
     """Ловит все callback-запросы, которые не обработаны другими хендлерами"""
     logger.warning(f"⚠️ [UNHANDLED CALLBACK] data: {callback.data}")
     await callback.answer(f"❌ Неизвестная команда", show_alert=True)
-
-@router.callback_query(F.data == "close")
-async def close_message(callback: CallbackQuery):
-    """Закрывает текущее сообщение (удаляет или редактирует)"""
-    try:
-        await callback.message.delete()  # Удаляет сообщение
-        await callback.answer()
-    except Exception as e:
-        logger.error(f"Error in close_message: {e}")
-        try:
-            # Если не удалось удалить, пробуем отредактировать
-            await callback.message.edit_text("🔒 Сообщение закрыто.")
-            await callback.answer()
-        except:
-            await callback.answer("❌ Ошибка", show_alert=True)
