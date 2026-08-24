@@ -351,3 +351,40 @@ async def menu_my_report(message: Message):
     except Exception as e:
         logger.error(f"Error in menu_my_report: {e}")
         await message.answer("❌ Ошибка при генерации отчёта.")
+
+
+
+@router.message(Command("set_timezone"))
+async def set_timezone(message: Message):
+    user = db.get_user_by_telegram(message.from_user.id)
+    if not user:
+        await message.answer("❌ Вы не зарегистрированы.")
+        return
+
+    args = message.text.split()
+    if len(args) < 2:
+        await message.answer(
+            "❌ Использование: /set_timezone Europe/Moscow\n\n"
+            "Доступные часовые пояса:\n"
+            "• Europe/Moscow (UTC+3)\n"
+            "• Europe/Kaliningrad (UTC+2)\n"
+            "• Asia/Yekaterinburg (UTC+5)\n"
+            "• Asia/Novosibirsk (UTC+7)\n"
+            "• Asia/Vladivostok (UTC+10)\n"
+            "• UTC\n"
+            "• ... и другие"
+        )
+        return
+
+    timezone = args[1]
+    
+    # Проверяем, существует ли такой часовой пояс
+    import pytz
+    try:
+        pytz.timezone(timezone)
+    except:
+        await message.answer(f"❌ Часовой пояс '{timezone}' не найден.")
+        return
+    
+    db.update_user(user.id, timezone=timezone)
+    await message.answer(f"✅ Часовой пояс изменён на {timezone}")
