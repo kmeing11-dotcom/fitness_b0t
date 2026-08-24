@@ -73,7 +73,7 @@ async def show_client_info(callback: CallbackQuery):
 
     except ValueError as e:
         logger.warning(f"ValueError in show_client_info: {e}")
-        await callback.answer(f"❌ Неверный ID: {e}", show_alert=True)
+        await callback.answer(f"❌ Неверный ID", show_alert=True)
     except Exception as e:
         logger.error(f"Error in show_client_info: {e}\n{traceback.format_exc()}")
         await callback.answer("❌ Ошибка", show_alert=True)
@@ -173,7 +173,7 @@ async def confirm_delete_client(callback: CallbackQuery):
         await callback.answer()
 
     except ValueError as e:
-        await callback.answer(f"❌ Неверный ID: {e}", show_alert=True)
+        await callback.answer("❌ Неверный ID", show_alert=True)
     except Exception as e:
         logger.error(f"Error in confirm_delete_client: {e}")
         await callback.answer("❌ Ошибка", show_alert=True)
@@ -182,7 +182,6 @@ async def confirm_delete_client(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("confirm_delete_"))
 async def delete_client(callback: CallbackQuery):
     try:
-        # confirm_delete_2
         parts = callback.data.split("_")
         if len(parts) < 3:
             await callback.answer("❌ Неверный формат", show_alert=True)
@@ -223,7 +222,7 @@ async def delete_client(callback: CallbackQuery):
         await callback.answer()
 
     except ValueError as e:
-        await callback.answer(f"❌ Неверный ID: {e}", show_alert=True)
+        await callback.answer("❌ Неверный ID", show_alert=True)
     except Exception as e:
         logger.error(f"Error in delete_client: {e}")
         await callback.answer("❌ Ошибка", show_alert=True)
@@ -299,7 +298,7 @@ async def view_client_measurements(callback: CallbackQuery):
         await callback.answer()
 
     except ValueError as e:
-        await callback.answer(f"❌ Неверный ID: {e}", show_alert=True)
+        await callback.answer("❌ Неверный ID", show_alert=True)
     except Exception as e:
         logger.error(f"Error in view_client_measurements: {e}")
         await callback.answer("❌ Ошибка", show_alert=True)
@@ -350,7 +349,7 @@ async def view_client_chart(callback: CallbackQuery):
         await callback.answer()
 
     except ValueError as e:
-        await callback.answer(f"❌ Неверный ID: {e}", show_alert=True)
+        await callback.answer("❌ Неверный ID", show_alert=True)
     except Exception as e:
         logger.error(f"Error in view_client_chart: {e}")
         await callback.answer("❌ Ошибка", show_alert=True)
@@ -413,7 +412,7 @@ async def generate_client_report(callback: CallbackQuery):
         await callback.answer()
 
     except ValueError as e:
-        await callback.answer(f"❌ Неверный ID: {e}", show_alert=True)
+        await callback.answer("❌ Неверный ID", show_alert=True)
     except Exception as e:
         logger.error(f"Error in generate_client_report: {e}")
         await callback.answer("❌ Ошибка", show_alert=True)
@@ -457,7 +456,7 @@ async def prompt_message_to_client(callback: CallbackQuery):
         await callback.answer()
 
     except ValueError as e:
-        await callback.answer(f"❌ Неверный ID: {e}", show_alert=True)
+        await callback.answer("❌ Неверный ID", show_alert=True)
     except Exception as e:
         logger.error(f"Error in prompt_message_to_client: {e}")
         await callback.answer("❌ Ошибка", show_alert=True)
