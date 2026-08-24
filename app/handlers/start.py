@@ -11,7 +11,8 @@ from app.keyboards.inline import (
     get_trainer_menu_keyboard,
     get_client_menu_keyboard,
     get_cancel_keyboard,
-    get_back_keyboard
+    get_back_keyboard,
+    get_goal_inline_keyboard
 )
 from app.utils.logger import get_logger
 import traceback
@@ -32,6 +33,10 @@ class RegistrationStates(StatesGroup):
     client_height = State()
     client_goal = State()
 
+
+# ============================================================
+#  КОМАНДА /start
+# ============================================================
 
 @router.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
@@ -66,10 +71,13 @@ async def cmd_start(message: Message, state: FSMContext):
         await state.set_state(RegistrationStates.choosing_role)
 
     except Exception as e:
-        error_text = f"❌ Ошибка в cmd_start: {e}\n{traceback.format_exc()}"
-        logger.error(error_text)
+        logger.error(f"Error in cmd_start: {e}\n{traceback.format_exc()}")
         await message.answer(f"❌ Ошибка: {str(e)[:200]}")
 
+
+# ============================================================
+#  ОБРАБОТЧИКИ ВЫБОРА РОЛИ
+# ============================================================
 
 @router.message(StateFilter(RegistrationStates.choosing_role), F.text == "👨‍🏫 Тренер")
 async def register_trainer(message: Message, state: FSMContext):
@@ -82,7 +90,7 @@ async def register_trainer(message: Message, state: FSMContext):
         )
         await state.set_state(RegistrationStates.trainer_name)
     except Exception as e:
-        logger.error(f"Error in register_trainer: {e}\n{traceback.format_exc()}")
+        logger.error(f"Error in register_trainer: {e}")
         await message.answer("❌ Ошибка. Попробуйте ещё раз.")
 
 
@@ -97,9 +105,13 @@ async def register_client(message: Message, state: FSMContext):
         )
         await state.set_state(RegistrationStates.client_name)
     except Exception as e:
-        logger.error(f"Error in register_client: {e}\n{traceback.format_exc()}")
+        logger.error(f"Error in register_client: {e}")
         await message.answer("❌ Ошибка. Попробуйте ещё раз.")
 
+
+# ============================================================
+#  РЕГИСТРАЦИЯ ТРЕНЕРА
+# ============================================================
 
 @router.message(StateFilter(RegistrationStates.trainer_name))
 async def process_trainer_name(message: Message, state: FSMContext):
@@ -116,7 +128,7 @@ async def process_trainer_name(message: Message, state: FSMContext):
         )
         await state.set_state(RegistrationStates.trainer_phone)
     except Exception as e:
-        logger.error(f"Error in process_trainer_name: {e}\n{traceback.format_exc()}")
+        logger.error(f"Error in process_trainer_name: {e}")
         await message.answer("❌ Ошибка. Попробуйте ещё раз.")
 
 
@@ -140,7 +152,7 @@ async def process_trainer_phone(message: Message, state: FSMContext):
         )
         await state.set_state(RegistrationStates.trainer_studio)
     except Exception as e:
-        logger.error(f"Error in process_trainer_phone: {e}\n{traceback.format_exc()}")
+        logger.error(f"Error in process_trainer_phone: {e}")
         await message.answer("❌ Ошибка. Попробуйте ещё раз.")
 
 
@@ -189,6 +201,10 @@ async def process_trainer_studio(message: Message, state: FSMContext):
         await state.clear()
 
 
+# ============================================================
+#  РЕГИСТРАЦИЯ УЧЕНИКА
+# ============================================================
+
 @router.message(StateFilter(RegistrationStates.client_name))
 async def process_client_name(message: Message, state: FSMContext):
     try:
@@ -204,7 +220,7 @@ async def process_client_name(message: Message, state: FSMContext):
         )
         await state.set_state(RegistrationStates.client_age)
     except Exception as e:
-        logger.error(f"Error in process_client_name: {e}\n{traceback.format_exc()}")
+        logger.error(f"Error in process_client_name: {e}")
         await message.answer("❌ Ошибка. Попробуйте ещё раз.")
 
 
@@ -249,13 +265,8 @@ async def process_client_height(message: Message, state: FSMContext):
 
         await state.update_data(height=height)
         await message.answer(
-            "🎯 Выберите вашу цель:\n\n"
-            "Отправьте одно из слов:\n"
-            "• похудение — сбросить вес\n"
-            "• набор — набрать мышечную массу\n"
-            "• поддержание — держать форму\n\n"
-            "Или нажмите кнопку:",
-            reply_markup=get_goal_keyboard()
+            "🎯 Выберите вашу цель:",
+            reply_markup=get_goal_inline_keyboard()
         )
         await state.set_state(RegistrationStates.client_goal)
 
@@ -266,54 +277,46 @@ async def process_client_height(message: Message, state: FSMContext):
         )
 
 
-@router.message(StateFilter(RegistrationStates.client_goal))
-async def process_client_goal(message: Message, state: FSMContext):
-    try:
-        goal = message.text.strip().lower()
-        await _finish_client_registration(message, state, goal)
-
-    except Exception as e:
-        logger.error(f"Error in process_client_goal: {e}\n{traceback.format_exc()}")
-        await message.answer("❌ Ошибка. Попробуйте ещё раз.")
-
-
 @router.callback_query(StateFilter(RegistrationStates.client_goal), F.data.startswith("goal_"))
 async def process_client_goal_callback(callback: CallbackQuery, state: FSMContext):
     try:
-        goal = callback.data.split("_")[1]
+        goal = callback.data.split("_")[1]  # goal_weight_loss -> weight_loss
         await _finish_client_registration(callback.message, state, goal, callback=callback)
-
     except Exception as e:
-        logger.error(f"Error in process_client_goal_callback: {e}\n{traceback.format_exc()}")
+        logger.error(f"Error in process_client_goal_callback: {e}")
         await callback.answer("❌ Ошибка", show_alert=True)
+
+
+@router.message(StateFilter(RegistrationStates.client_goal))
+async def process_client_goal_text(message: Message, state: FSMContext):
+    """Обработка текстового ввода цели (на случай, если пользователь введёт текстом)"""
+    try:
+        goal_map = {
+            "похудение": "weight_loss",
+            "набор": "muscle_gain",
+            "поддержание": "maintain"
+        }
+        goal = goal_map.get(message.text.lower())
+        if goal:
+            await _finish_client_registration(message, state, goal)
+        else:
+            await message.answer(
+                "❌ Пожалуйста, выберите цель с помощью кнопок.",
+                reply_markup=get_goal_inline_keyboard()
+            )
+    except Exception as e:
+        logger.error(f"Error in process_client_goal_text: {e}")
+        await message.answer("❌ Ошибка. Попробуйте ещё раз.")
 
 
 async def _finish_client_registration(
     message: Message,
     state: FSMContext,
-    goal_text: str,
+    goal: str,
     callback: CallbackQuery = None
 ):
     try:
         logger.info(f"📝 Creating client profile for user {message.from_user.id}")
-
-        goal_map = {
-            "похудение": "weight_loss",
-            "набор": "muscle_gain",
-            "поддержание": "maintain",
-            "weight_loss": "weight_loss",
-            "muscle_gain": "muscle_gain",
-            "maintain": "maintain"
-        }
-
-        goal = goal_map.get(goal_text.lower())
-        if not goal:
-            await message.answer(
-                "❌ Пожалуйста, выберите одну из целей:\n"
-                "похудение, набор, поддержание",
-                reply_markup=get_goal_keyboard()
-            )
-            return
 
         data = await state.get_data()
 
@@ -367,12 +370,16 @@ async def _finish_client_registration(
             await callback.answer("❌ Ошибка", show_alert=True)
 
 
-def get_goal_keyboard():
-    from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
-    kb = [
-        [KeyboardButton(text="🎯 Похудение")],
-        [KeyboardButton(text="💪 Набор")],
-        [KeyboardButton(text="⚖️ Поддержание")],
-        [KeyboardButton(text="🔙 Отмена")]
-    ]
-    return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True, one_time_keyboard=True)
+# ============================================================
+#  ОТМЕНА РЕГИСТРАЦИИ
+# ============================================================
+
+@router.callback_query(F.data == "cancel_registration")
+async def cancel_registration_callback(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await callback.message.edit_text(
+        "❌ Регистрация отменена.\n"
+        "Если захотите зарегистрироваться позже, используйте /start.",
+        reply_markup=get_back_keyboard()
+    )
+    await callback.answer()
