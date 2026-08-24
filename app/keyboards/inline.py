@@ -54,16 +54,12 @@ def get_cancel_keyboard() -> ReplyKeyboardMarkup:
     )
 
 
-def get_back_keyboard() -> ReplyKeyboardMarkup:
-    """Клавиатура с кнопкой назад"""
+def get_back_keyboard() -> InlineKeyboardMarkup:
+    """Inline-клавиатура с кнопкой 'Назад'"""
     kb = [
-        [KeyboardButton(text="🔙 Назад")]
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_clients")]
     ]
-    return ReplyKeyboardMarkup(
-        keyboard=kb,
-        resize_keyboard=True
-    )
-
+    return InlineKeyboardMarkup(inline_keyboard=kb)
 
 def get_yes_no_keyboard() -> ReplyKeyboardMarkup:
     """Клавиатура Да/Нет"""
