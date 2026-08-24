@@ -497,3 +497,16 @@ async def cancel_message(callback: CallbackQuery):
     except Exception as e:
         logger.error(f"Error in cancel_message: {e}")
         await callback.answer("❌ Ошибка", show_alert=True)
+
+
+# ============================================================
+#  УНИВЕРСАЛЬНЫЙ ОБРАБОТЧИК ДЛЯ НЕИЗВЕСТНЫХ CALLBACK
+# ============================================================
+
+@router.callback_query()
+async def catch_all_callbacks(callback: CallbackQuery):
+    """Ловит все callback-запросы, которые не обработаны другими хендлерами"""
+    logger.warning(f"⚠️ [UNHANDLED CALLBACK] data: {callback.data}")
+    logger.warning(f"⚠️ [UNHANDLED CALLBACK] from: {callback.from_user.id}")
+    logger.warning(f"⚠️ [UNHANDLED CALLBACK] message_id: {callback.message.message_id}")
+    await callback.answer(f"❌ Неизвестная команда: {callback.data[:50]}", show_alert=True)
