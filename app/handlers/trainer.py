@@ -19,46 +19,20 @@ router = Router()
 db = DatabaseService()
 
 
-# ============================================================
-#  УНИВЕРСАЛЬНЫЙ ЛОГГЕР ВСЕХ CALLBACK
-# ============================================================
-
-@router.callback_query()
-async def log_all_callbacks(callback: CallbackQuery):
-    """Логирует ВСЕ callback запросы для отладки"""
-    logger.info(f"📥 [ALL CALLBACKS] data: {callback.data}")
-    logger.info(f"📥 [ALL CALLBACKS] from user: {callback.from_user.id}")
-    logger.info(f"📥 [ALL CALLBACKS] message_id: {callback.message.message_id}")
-    # Пропускаем дальше, чтобы другие обработчики тоже сработали
-    await callback.continue_propagation()
-
-
-# ============================================================
-#  ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ
-# ============================================================
-
 def get_client_id_from_callback(callback_data: str) -> int:
     """Универсальный парсинг ID из callback_data"""
-    logger.info(f"🔍 Parsing: {callback_data}")
     parts = callback_data.split("_")
-    logger.info(f"🔍 Parts: {parts}")
     if len(parts) < 2:
         raise ValueError(f"Invalid format: {callback_data}")
     if not parts[1].isdigit():
         raise ValueError(f"ID is not a number: {parts[1]}")
-    client_id = int(parts[1])
-    logger.info(f"✅ Parsed ID: {client_id}")
-    return client_id
+    return int(parts[1])
 
-
-# ============================================================
-#  ОБРАБОТЧИКИ
-# ============================================================
 
 @router.callback_query(F.data.startswith("info_"))
 async def show_client_info(callback: CallbackQuery):
     try:
-        logger.info(f"📥 [info_] START: {callback.data}")
+        logger.info(f"📥 [info_] data: {callback.data}")
         client_id = get_client_id_from_callback(callback.data)
         client = db.get_user(client_id)
 
@@ -97,7 +71,7 @@ async def show_client_info(callback: CallbackQuery):
 
     except ValueError as e:
         logger.error(f"❌ ValueError in show_client_info: {e}")
-        await callback.answer(f"❌ Неверный ID: {callback.data}", show_alert=True)
+        await callback.answer(f"❌ Неверный ID", show_alert=True)
     except Exception as e:
         logger.error(f"❌ Error in show_client_info: {e}\n{traceback.format_exc()}")
         await callback.answer("❌ Ошибка", show_alert=True)
@@ -106,7 +80,7 @@ async def show_client_info(callback: CallbackQuery):
 @router.callback_query(F.data == "back_to_clients")
 async def back_to_clients(callback: CallbackQuery):
     try:
-        logger.info(f"📥 [back_to_clients] START")
+        logger.info(f"📥 [back_to_clients]")
         trainer = db.get_user_by_telegram(callback.from_user.id)
         if not trainer:
             await callback.answer("❌ Тренер не найден", show_alert=True)
@@ -138,7 +112,7 @@ async def back_to_clients(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("page_"))
 async def page_clients(callback: CallbackQuery):
     try:
-        logger.info(f"📥 [page_] START: {callback.data}")
+        logger.info(f"📥 [page_] data: {callback.data}")
         parts = callback.data.split("_")
         if len(parts) < 3:
             await callback.answer("❌ Неверный формат", show_alert=True)
@@ -167,7 +141,7 @@ async def page_clients(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("delete_"))
 async def confirm_delete_client(callback: CallbackQuery):
     try:
-        logger.info(f"📥 [delete_] START: {callback.data}")
+        logger.info(f"📥 [delete_] data: {callback.data}")
         client_id = get_client_id_from_callback(callback.data)
         client = db.get_user(client_id)
 
@@ -201,7 +175,7 @@ async def confirm_delete_client(callback: CallbackQuery):
 
     except ValueError as e:
         logger.error(f"❌ ValueError in confirm_delete_client: {e}")
-        await callback.answer(f"❌ Неверный ID: {callback.data}", show_alert=True)
+        await callback.answer("❌ Неверный ID", show_alert=True)
     except Exception as e:
         logger.error(f"❌ Error in confirm_delete_client: {e}")
         await callback.answer("❌ Ошибка", show_alert=True)
@@ -210,7 +184,7 @@ async def confirm_delete_client(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("confirm_delete_"))
 async def delete_client(callback: CallbackQuery):
     try:
-        logger.info(f"📥 [confirm_delete_] START: {callback.data}")
+        logger.info(f"📥 [confirm_delete_] data: {callback.data}")
         parts = callback.data.split("_")
         if len(parts) < 3:
             await callback.answer("❌ Неверный формат", show_alert=True)
@@ -252,7 +226,7 @@ async def delete_client(callback: CallbackQuery):
 
     except ValueError as e:
         logger.error(f"❌ ValueError in delete_client: {e}")
-        await callback.answer(f"❌ Неверный ID: {callback.data}", show_alert=True)
+        await callback.answer("❌ Неверный ID", show_alert=True)
     except Exception as e:
         logger.error(f"❌ Error in delete_client: {e}")
         await callback.answer("❌ Ошибка", show_alert=True)
@@ -261,7 +235,7 @@ async def delete_client(callback: CallbackQuery):
 @router.callback_query(F.data == "cancel_delete")
 async def cancel_delete(callback: CallbackQuery):
     try:
-        logger.info(f"📥 [cancel_delete] START")
+        logger.info(f"📥 [cancel_delete]")
         trainer = db.get_user_by_telegram(callback.from_user.id)
         if not trainer:
             await callback.answer("❌ Тренер не найден", show_alert=True)
@@ -284,7 +258,7 @@ async def cancel_delete(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("measurements_"))
 async def view_client_measurements(callback: CallbackQuery):
     try:
-        logger.info(f"📥 [measurements_] START: {callback.data}")
+        logger.info(f"📥 [measurements_] data: {callback.data}")
         client_id = get_client_id_from_callback(callback.data)
         client = db.get_user(client_id)
 
@@ -331,7 +305,7 @@ async def view_client_measurements(callback: CallbackQuery):
 
     except ValueError as e:
         logger.error(f"❌ ValueError in view_client_measurements: {e}")
-        await callback.answer(f"❌ Неверный ID: {callback.data}", show_alert=True)
+        await callback.answer("❌ Неверный ID", show_alert=True)
     except Exception as e:
         logger.error(f"❌ Error in view_client_measurements: {e}")
         await callback.answer("❌ Ошибка", show_alert=True)
@@ -343,7 +317,7 @@ async def view_client_chart(callback: CallbackQuery):
         from app.services.chart_service import ChartService
         from aiogram.types import BufferedInputFile
 
-        logger.info(f"📥 [chart_] START: {callback.data}")
+        logger.info(f"📥 [chart_] data: {callback.data}")
         client_id = get_client_id_from_callback(callback.data)
         client = db.get_user(client_id)
 
@@ -384,7 +358,7 @@ async def view_client_chart(callback: CallbackQuery):
 
     except ValueError as e:
         logger.error(f"❌ ValueError in view_client_chart: {e}")
-        await callback.answer(f"❌ Неверный ID: {callback.data}", show_alert=True)
+        await callback.answer("❌ Неверный ID", show_alert=True)
     except Exception as e:
         logger.error(f"❌ Error in view_client_chart: {e}")
         await callback.answer("❌ Ошибка", show_alert=True)
@@ -396,8 +370,9 @@ async def generate_client_report(callback: CallbackQuery):
         from app.services.pdf_service import PDFService
         from app.services.chart_service import ChartService
         from aiogram.types import FSInputFile
+        from datetime import datetime
 
-        logger.info(f"📥 [report_] START: {callback.data}")
+        logger.info(f"📥 [report_] data: {callback.data}")
         client_id = get_client_id_from_callback(callback.data)
         client = db.get_user(client_id)
 
@@ -449,7 +424,7 @@ async def generate_client_report(callback: CallbackQuery):
 
     except ValueError as e:
         logger.error(f"❌ ValueError in generate_client_report: {e}")
-        await callback.answer(f"❌ Неверный ID: {callback.data}", show_alert=True)
+        await callback.answer("❌ Неверный ID", show_alert=True)
     except Exception as e:
         logger.error(f"❌ Error in generate_client_report: {e}")
         await callback.answer("❌ Ошибка", show_alert=True)
@@ -463,7 +438,7 @@ async def prompt_message_to_client(callback: CallbackQuery):
             await callback.answer("❌ Выберите ученика из списка.", show_alert=True)
             return
 
-        logger.info(f"📥 [msg_] START: {callback.data}")
+        logger.info(f"📥 [msg_] data: {callback.data}")
         client_id = get_client_id_from_callback(callback.data)
         client = db.get_user(client_id)
 
@@ -495,7 +470,7 @@ async def prompt_message_to_client(callback: CallbackQuery):
 
     except ValueError as e:
         logger.error(f"❌ ValueError in prompt_message_to_client: {e}")
-        await callback.answer(f"❌ Неверный ID: {callback.data}", show_alert=True)
+        await callback.answer("❌ Неверный ID", show_alert=True)
     except Exception as e:
         logger.error(f"❌ Error in prompt_message_to_client: {e}")
         await callback.answer("❌ Ошибка", show_alert=True)
