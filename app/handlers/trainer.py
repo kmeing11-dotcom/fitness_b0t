@@ -95,39 +95,28 @@ async def show_client_info(callback: CallbackQuery):
         await callback.answer("❌ Ошибка", show_alert=True)
 
 
+
 @router.callback_query(F.data == "back_to_clients")
 async def back_to_clients(callback: CallbackQuery, state: FSMContext):
+    """Возвращает в главное меню тренера"""
     try:
         await state.clear()
         logger.info(f"📥 [back_to_clients]")
         
-        # Проверяем, откуда пришли — если из информации о клиенте, возвращаемся к списку
         trainer = db.get_user_by_telegram(callback.from_user.id)
         if not trainer:
             await callback.answer("❌ Тренер не найден", show_alert=True)
             return
 
-        clients = db.get_trainer_clients(trainer.id)
+        from app.keyboards.inline import get_trainer_menu_keyboard
 
-        if not clients:
-            await callback.message.edit_text(
-                "👥 У вас пока нет учеников.\n"
-                "Чтобы добавить ученика, используйте /add_client.",
-                reply_markup=get_back_keyboard()
-            )
-            await callback.answer()
-            return
-
-        keyboard = get_clients_list_keyboard(clients, action="info")
         await callback.message.edit_text(
-            f"👥 Ваши ученики ({len(clients)} чел.):",
-            reply_markup=keyboard
+            f"👋 <b>Главное меню</b>\n\n"
+            f"Добро пожаловать, {trainer.full_name or 'Тренер'}!",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_trainer_menu_keyboard()
         )
         await callback.answer()
-
-    except Exception as e:
-        logger.error(f"❌ Error in back_to_clients: {e}")
-        await callback.answer("❌ Ошибка", show_alert=True)
 
 @router.callback_query(F.data.startswith("page_"))
 async def page_clients(callback: CallbackQuery):
