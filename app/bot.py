@@ -42,6 +42,7 @@ class FitnessBot:
             logger.error(f"❌ Configuration error: {e}")
             raise
 
+        Database.drop_db()  # ВРЕМЕННО!
         init_db()
         logger.info("✅ Database initialized")
 
