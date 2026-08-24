@@ -1,7 +1,7 @@
 from aiogram import Router, F
 from aiogram.types import Message
-from aiogram.fsm.context import FSMContext
 from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
 from aiogram.enums import ParseMode
 from app.services.db_service import DatabaseService
 from app.keyboards.inline import (
@@ -26,9 +26,6 @@ db = DatabaseService()
 
 @router.message(F.text == "🔙 Назад")
 async def back_to_menu(message: Message):
-    """
-    Возврат в главное меню.
-    """
     try:
         user = db.get_user_by_telegram(message.from_user.id)
         if not user:
@@ -63,9 +60,6 @@ async def back_to_menu(message: Message):
 
 @router.message(F.text == "👥 Мои ученики")
 async def show_clients(message: Message):
-    """
-    Показывает список учеников тренера.
-    """
     try:
         user = db.get_user_by_telegram(message.from_user.id)
         if not user:
@@ -103,9 +97,6 @@ async def show_clients(message: Message):
 
 @router.message(F.text == "📊 Статистика")
 async def menu_stats(message: Message):
-    """
-    Меню статистики.
-    """
     try:
         user = db.get_user_by_telegram(message.from_user.id)
         if not user or user.role != UserRole.TRAINER:
@@ -137,9 +128,6 @@ async def menu_stats(message: Message):
 
 @router.message(F.text == "📈 Отчёты")
 async def menu_reports(message: Message):
-    """
-    Меню отчётов.
-    """
     try:
         user = db.get_user_by_telegram(message.from_user.id)
         if not user or user.role != UserRole.TRAINER:
@@ -172,9 +160,6 @@ async def menu_reports(message: Message):
 
 @router.message(F.text == "⏰ Напоминания")
 async def menu_reminders(message: Message):
-    """
-    Меню управления напоминаниями.
-    """
     try:
         user = db.get_user_by_telegram(message.from_user.id)
         if not user or user.role != UserRole.TRAINER:
@@ -218,7 +203,7 @@ async def menu_broadcast(message: Message):
             )
             return
 
-        keyboard = get_clients_list_keyboard(clients, action="msg")  # <-- ИЗМЕНИЛ action с "msg_select" на "msg"
+        keyboard = get_clients_list_keyboard(clients, action="msg")
 
         await message.answer(
             f"📨 <b>Выберите ученика для отправки сообщения:</b>\n\n"
@@ -231,11 +216,9 @@ async def menu_broadcast(message: Message):
         logger.error(f"Error in menu_broadcast: {e}")
         await message.answer("❌ Ошибка при загрузке рассылки.")
 
+
 @router.message(F.text == "⚙️ Настройки")
 async def menu_settings(message: Message):
-    """
-    Меню настроек.
-    """
     try:
         user = db.get_user_by_telegram(message.from_user.id)
         if not user:
@@ -272,9 +255,6 @@ async def menu_settings(message: Message):
 
 @router.message(F.text == "❓ Помощь")
 async def menu_help(message: Message):
-    """
-    Меню помощи.
-    """
     try:
         user = db.get_user_by_telegram(message.from_user.id)
         if not user:
@@ -295,9 +275,6 @@ async def menu_help(message: Message):
 
 @router.message(F.text == "📝 Внести замеры")
 async def menu_measurements(message: Message, state: FSMContext):
-    """
-    Внос замеров учеником.
-    """
     try:
         user = db.get_user_by_telegram(message.from_user.id)
         if not user:
@@ -318,9 +295,6 @@ async def menu_measurements(message: Message, state: FSMContext):
 
 @router.message(F.text == "📊 Мой прогресс")
 async def menu_progress(message: Message):
-    """
-    Просмотр прогресса учеником.
-    """
     try:
         user = db.get_user_by_telegram(message.from_user.id)
         if not user or user.role != UserRole.CLIENT:
@@ -337,9 +311,6 @@ async def menu_progress(message: Message):
 
 @router.message(F.text == "📄 Мой отчёт")
 async def menu_my_report(message: Message):
-    """
-    Генерация отчёта учеником.
-    """
     try:
         user = db.get_user_by_telegram(message.from_user.id)
         if not user or user.role != UserRole.CLIENT:
@@ -352,40 +323,3 @@ async def menu_my_report(message: Message):
     except Exception as e:
         logger.error(f"Error in menu_my_report: {e}")
         await message.answer("❌ Ошибка при генерации отчёта.")
-
-
-
-@router.message(Command("set_timezone"))
-async def set_timezone(message: Message):
-    user = db.get_user_by_telegram(message.from_user.id)
-    if not user:
-        await message.answer("❌ Вы не зарегистрированы.")
-        return
-
-    args = message.text.split()
-    if len(args) < 2:
-        await message.answer(
-            "❌ Использование: /set_timezone Europe/Moscow\n\n"
-            "Доступные часовые пояса:\n"
-            "• Europe/Moscow (UTC+3)\n"
-            "• Europe/Kaliningrad (UTC+2)\n"
-            "• Asia/Yekaterinburg (UTC+5)\n"
-            "• Asia/Novosibirsk (UTC+7)\n"
-            "• Asia/Vladivostok (UTC+10)\n"
-            "• UTC\n"
-            "• ... и другие"
-        )
-        return
-
-    timezone = args[1]
-    
-    # Проверяем, существует ли такой часовой пояс
-    import pytz
-    try:
-        pytz.timezone(timezone)
-    except:
-        await message.answer(f"❌ Часовой пояс '{timezone}' не найден.")
-        return
-    
-    db.update_user(user.id, timezone=timezone)
-    await message.answer(f"✅ Часовой пояс изменён на {timezone}")
