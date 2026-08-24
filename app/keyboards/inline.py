@@ -87,15 +87,6 @@ def get_clients_list_keyboard(
     page: int = 0,
     per_page: int = 5
 ) -> Optional[InlineKeyboardMarkup]:
-    """
-    Клавиатура со списком клиентов (с пагинацией).
-
-    Args:
-        clients: Список клиентов
-        action: Действие (info, delete, etc.)
-        page: Номер страницы
-        per_page: Количество на странице
-    """
     if not clients:
         return None
 
@@ -105,24 +96,22 @@ def get_clients_list_keyboard(
 
     kb = []
 
-    # Клиенты на текущей странице
     for client in clients[start:end]:
         name = client.full_name or client.username or f"ID:{client.id}"
         kb.append([
             InlineKeyboardButton(
                 text=f"👤 {name}",
-                callback_data=f"{action}_{client.id}"
+                callback_data=f"{action}_{client.id}"  # info_2, measurements_2 и т.д.
             )
         ])
 
-    # Пагинация
     if total > per_page:
         nav_buttons = []
         if page > 0:
             nav_buttons.append(
                 InlineKeyboardButton(
-                    text="⬅️",
-                    callback_data=f"page_{action}_{page - 1}"
+                    text="◀️",
+                    callback_data=f"page_{action}_{page - 1}"  # page_info_1
                 )
             )
         nav_buttons.append(
@@ -134,13 +123,12 @@ def get_clients_list_keyboard(
         if end < total:
             nav_buttons.append(
                 InlineKeyboardButton(
-                    text="➡️",
-                    callback_data=f"page_{action}_{page + 1}"
+                    text="▶️",
+                    callback_data=f"page_{action}_{page + 1}"  # page_info_3
                 )
             )
         kb.append(nav_buttons)
 
-    # Кнопка закрытия
     kb.append([
         InlineKeyboardButton(text="❌ Закрыть", callback_data="close")
     ])
@@ -152,14 +140,14 @@ def get_client_actions_keyboard(client_id: int) -> InlineKeyboardMarkup:
     """Клавиатура действий с клиентом"""
     kb = [
         [
-            InlineKeyboardButton(text="📊 Замеры", callback_data=f"measurements_{client_id}")
+            InlineKeyboardButton(text="📊 Замеры", callback_data=f"measurements_{client_id}"),
+            InlineKeyboardButton(text="📈 График", callback_data=f"chart_{client_id}")
         ],
         [
-            InlineKeyboardButton(text="📈 График", callback_data=f"chart_{client_id}"),
-            InlineKeyboardButton(text="📄 Отчёт", callback_data=f"report_{client_id}")
+            InlineKeyboardButton(text="📄 Отчёт", callback_data=f"report_{client_id}"),
+            InlineKeyboardButton(text="✏️ Написать", callback_data=f"msg_{client_id}")
         ],
         [
-            InlineKeyboardButton(text="✏️ Написать", callback_data=f"msg_{client_id}"),
             InlineKeyboardButton(text="❌ Удалить", callback_data=f"delete_{client_id}")
         ],
         [
