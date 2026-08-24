@@ -1,5 +1,5 @@
 from aiogram import Router, F
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.enums import ParseMode
 from datetime import datetime
 from app.services.db_service import DatabaseService
@@ -7,8 +7,7 @@ from app.keyboards.inline import (
     get_client_actions_keyboard,
     get_back_keyboard,
     get_clients_list_keyboard,
-    get_confirm_delete_keyboard,
-    get_cancel_keyboard
+    get_confirm_delete_keyboard
 )
 from app.models import UserRole
 from app.utils.logger import get_logger
@@ -71,7 +70,7 @@ async def show_client_info(callback: CallbackQuery):
 
     except ValueError as e:
         logger.error(f"❌ ValueError in show_client_info: {e}")
-        await callback.answer(f"❌ Неверный ID", show_alert=True)
+        await callback.answer("❌ Неверный ID", show_alert=True)
     except Exception as e:
         logger.error(f"❌ Error in show_client_info: {e}\n{traceback.format_exc()}")
         await callback.answer("❌ Ошибка", show_alert=True)
@@ -330,6 +329,7 @@ async def view_client_chart(callback: CallbackQuery):
         if len(measurements) < 2:
             await callback.message.edit_text(
                 "❌ Недостаточно данных для графика.\nНужно минимум 2 замера.",
+                parse_mode=ParseMode.HTML,
                 reply_markup=get_back_keyboard()
             )
             await callback.answer()
@@ -341,6 +341,7 @@ async def view_client_chart(callback: CallbackQuery):
         if not chart_data:
             await callback.message.edit_text(
                 "❌ Ошибка при генерации графика.",
+                parse_mode=ParseMode.HTML,
                 reply_markup=get_back_keyboard()
             )
             await callback.answer()
@@ -370,7 +371,6 @@ async def generate_client_report(callback: CallbackQuery):
         from app.services.pdf_service import PDFService
         from app.services.chart_service import ChartService
         from aiogram.types import FSInputFile
-        from datetime import datetime
 
         logger.info(f"📥 [report_] data: {callback.data}")
         client_id = get_client_id_from_callback(callback.data)
@@ -385,6 +385,7 @@ async def generate_client_report(callback: CallbackQuery):
         if len(measurements) < 2:
             await callback.message.edit_text(
                 "❌ Недостаточно данных для отчёта.\nНужно минимум 2 замера.",
+                parse_mode=ParseMode.HTML,
                 reply_markup=get_back_keyboard()
             )
             await callback.answer()
@@ -404,6 +405,7 @@ async def generate_client_report(callback: CallbackQuery):
         if not pdf_path:
             await callback.message.edit_text(
                 "❌ Ошибка при генерации отчёта.",
+                parse_mode=ParseMode.HTML,
                 reply_markup=get_back_keyboard()
             )
             await callback.answer()
@@ -459,8 +461,7 @@ async def prompt_message_to_client(callback: CallbackQuery):
         text = f"✏️ Напишите сообщение для <b>{client.full_name or client.username}</b>:\n\n"
         text += "<i>Сообщение будет отправлено в личные сообщения ученику.</i>"
 
-        # Используем InlineKeyboardMarkup вместо ReplyKeyboardMarkup
-        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        # Inline-клавиатура для отмены
         cancel_keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_message")]
@@ -482,6 +483,7 @@ async def prompt_message_to_client(callback: CallbackQuery):
     except Exception as e:
         logger.error(f"❌ Error in prompt_message_to_client: {e}")
         await callback.answer("❌ Ошибка", show_alert=True)
+
 
 @router.callback_query(F.data == "cancel_message")
 async def cancel_message(callback: CallbackQuery):
