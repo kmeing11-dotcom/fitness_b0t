@@ -293,7 +293,7 @@ async def process_client_goal_text(message: Message, state: FSMContext):
     try:
         goal_map = {
             "похудение": "weight_loss",
-            "набор": "muscle_gain",
+            "набор": "muscle_gain",      # <-- ИСПРАВЛЕНО
             "поддержание": "maintain"
         }
         goal = goal_map.get(message.text.lower())
@@ -317,6 +317,28 @@ async def _finish_client_registration(
 ):
     try:
         logger.info(f"📝 Creating client profile for user {message.from_user.id}")
+
+        # Правильные значения для enum goal
+        goal_map = {
+            "похудение": "weight_loss",
+            "набор": "muscle_gain",      # <-- ИСПРАВЛЕНО
+            "поддержание": "maintain",
+            "weight_loss": "weight_loss",
+            "muscle_gain": "muscle_gain", # <-- ИСПРАВЛЕНО
+            "maintain": "maintain"
+        }
+
+        # Если пришло "muscle" — исправляем на "muscle_gain"
+        if goal == "muscle":
+            goal = "muscle_gain"
+
+        goal = goal_map.get(goal)
+        if not goal:
+            await message.answer(
+                "❌ Неверная цель. Пожалуйста, выберите цель с помощью кнопок.",
+                reply_markup=get_goal_inline_keyboard()
+            )
+            return
 
         data = await state.get_data()
 
