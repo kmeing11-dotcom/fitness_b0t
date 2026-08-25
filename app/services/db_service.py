@@ -29,7 +29,6 @@ class DatabaseService:
 
     @contextmanager
     def _get_session(self):
-        """Контекстный менеджер для сессии с обработкой ошибок"""
         session = self.Session()
         try:
             yield session
@@ -60,11 +59,9 @@ class DatabaseService:
     def create_user(self, telegram_id, username, full_name, role, **kwargs):
         """Создаёт нового пользователя или обновляет существующего"""
         with self._get_session() as session:
-            # Проверяем, существует ли пользователь с таким telegram_id
             existing_user = session.query(User).filter(User.telegram_id == telegram_id).first()
             
             if existing_user:
-                # Обновляем существующего пользователя
                 existing_user.username = username
                 existing_user.full_name = full_name
                 existing_user.role = role
@@ -75,7 +72,6 @@ class DatabaseService:
                 logger.info(f"✅ User updated: {existing_user.telegram_id}")
                 return existing_user
             
-            # Создаём нового пользователя
             user = User(
                 telegram_id=telegram_id,
                 username=username,
