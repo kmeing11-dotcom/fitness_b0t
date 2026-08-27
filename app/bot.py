@@ -44,7 +44,6 @@ class FitnessBot:
         except ValueError as e:
             logger.error(f"❌ Configuration error: {e}")
             raise
-        Database.drop_db()
         init_db()
         logger.info("✅ Database initialized")
 
