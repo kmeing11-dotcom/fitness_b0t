@@ -4,6 +4,9 @@ from pathlib import Path
 from aiohttp import web
 import os
 import signal
+# Временно! Удали после сброса!
+from app.db import Database
+
 
 sys.path.append(str(Path(__file__).parent.parent))
 
@@ -41,7 +44,7 @@ class FitnessBot:
         except ValueError as e:
             logger.error(f"❌ Configuration error: {e}")
             raise
-
+        Database.drop_db()
         init_db()
         logger.info("✅ Database initialized")
 
