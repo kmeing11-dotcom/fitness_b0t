@@ -54,13 +54,17 @@ def get_cancel_keyboard() -> ReplyKeyboardMarkup:
     )
 
 
-def get_back_keyboard() -> InlineKeyboardMarkup:
-    """Inline-клавиатура с кнопкой 'Назад'"""
+def get_back_keyboard() -> ReplyKeyboardMarkup:
+    """Клавиатура с кнопкой назад (для обычных сообщений)"""
     kb = [
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_clients")]
+        [KeyboardButton(text="🔙 Назад")]
     ]
-    return InlineKeyboardMarkup(inline_keyboard=kb)
-    
+    return ReplyKeyboardMarkup(
+        keyboard=kb,
+        resize_keyboard=True
+    )
+
+
 def get_yes_no_keyboard() -> ReplyKeyboardMarkup:
     """Клавиатура Да/Нет"""
     kb = [
@@ -83,6 +87,9 @@ def get_clients_list_keyboard(
     page: int = 0,
     per_page: int = 5
 ) -> Optional[InlineKeyboardMarkup]:
+    """
+    Клавиатура со списком клиентов (с пагинацией).
+    """
     if not clients:
         return None
 
@@ -97,7 +104,7 @@ def get_clients_list_keyboard(
         kb.append([
             InlineKeyboardButton(
                 text=f"👤 {name}",
-                callback_data=f"{action}_{client.id}"  # info_2, measurements_2 и т.д.
+                callback_data=f"{action}_{client.id}"
             )
         ])
 
@@ -106,8 +113,8 @@ def get_clients_list_keyboard(
         if page > 0:
             nav_buttons.append(
                 InlineKeyboardButton(
-                    text="◀️",
-                    callback_data=f"page_{action}_{page - 1}"  # page_info_1
+                    text="⬅️",
+                    callback_data=f"page_{action}_{page - 1}"
                 )
             )
         nav_buttons.append(
@@ -119,8 +126,8 @@ def get_clients_list_keyboard(
         if end < total:
             nav_buttons.append(
                 InlineKeyboardButton(
-                    text="▶️",
-                    callback_data=f"page_{action}_{page + 1}"  # page_info_3
+                    text="➡️",
+                    callback_data=f"page_{action}_{page + 1}"
                 )
             )
         kb.append(nav_buttons)
@@ -136,14 +143,14 @@ def get_client_actions_keyboard(client_id: int) -> InlineKeyboardMarkup:
     """Клавиатура действий с клиентом"""
     kb = [
         [
-            InlineKeyboardButton(text="📊 Замеры", callback_data=f"measurements_{client_id}"),
-            InlineKeyboardButton(text="📈 График", callback_data=f"chart_{client_id}")
+            InlineKeyboardButton(text="📊 Замеры", callback_data=f"measurements_{client_id}")
         ],
         [
-            InlineKeyboardButton(text="📄 Отчёт", callback_data=f"report_{client_id}"),
-            InlineKeyboardButton(text="✏️ Написать", callback_data=f"msg_{client_id}")
+            InlineKeyboardButton(text="📈 График", callback_data=f"chart_{client_id}"),
+            InlineKeyboardButton(text="📄 Отчёт", callback_data=f"report_{client_id}")
         ],
         [
+            InlineKeyboardButton(text="✏️ Написать", callback_data=f"msg_{client_id}"),
             InlineKeyboardButton(text="❌ Удалить", callback_data=f"delete_{client_id}")
         ],
         [
@@ -209,7 +216,7 @@ def get_days_of_week_keyboard() -> InlineKeyboardMarkup:
         row.append(
             InlineKeyboardButton(
                 text=name,
-                callback_data=f"reminder_day_{value}"  # <-- ЭТО ДОЛЖНО БЫТЬ ТАК
+                callback_data=f"reminder_day_{value}"
             )
         )
         if len(row) == 4:
@@ -415,13 +422,40 @@ def get_admin_keyboard() -> InlineKeyboardMarkup:
 
 
 # ============================================================
+#  КЛАВИАТУРА ДЛЯ ВЫБОРА ЦЕЛИ
+# ============================================================
+
+def get_goal_inline_keyboard() -> InlineKeyboardMarkup:
+    """Inline-клавиатура для выбора цели"""
+    kb = [
+        [
+            InlineKeyboardButton(text="🎯 Похудение", callback_data="goal_weight_loss"),
+            InlineKeyboardButton(text="💪 Набор", callback_data="goal_muscle_gain")
+        ],
+        [
+            InlineKeyboardButton(text="⚖️ Поддержание", callback_data="goal_maintain"),
+            InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_registration")
+        ]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=kb)
+
+
+# ============================================================
 #  ОБЩИЕ КЛАВИАТУРЫ
 # ============================================================
 
 def get_close_keyboard() -> InlineKeyboardMarkup:
-    """Клавиатура с кнопкой закрытия"""
+    """Клавиатура с кнопкой закрытия (inline)"""
     kb = [
         [InlineKeyboardButton(text="❌ Закрыть", callback_data="close")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=kb)
+
+
+def get_back_inline_keyboard() -> InlineKeyboardMarkup:
+    """Inline-клавиатура с кнопкой 'Назад'"""
+    kb = [
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_clients")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
@@ -441,14 +475,6 @@ def get_back_to_menu_keyboard(role: str) -> InlineKeyboardMarkup:
 def get_action_from_callback(callback_data: str) -> tuple:
     """
     Разбирает callback_data на компоненты.
-
-    Примеры:
-        "measurements_123" -> ("measurements", "123", None)
-        "page_info_2" -> ("page", "info", "2")
-        "delete_client_123" -> ("delete", "client", "123")
-
-    Returns:
-        Кортеж (action, param1, param2)
     """
     parts = callback_data.split('_')
     if len(parts) == 2:
@@ -456,55 +482,3 @@ def get_action_from_callback(callback_data: str) -> tuple:
     elif len(parts) == 3:
         return (parts[0], parts[1], parts[2])
     return (callback_data, None, None)
-
-
-def get_cancel_inline_keyboard() -> InlineKeyboardMarkup:
-    """Inline-клавиатура с кнопкой 'Отмена'"""
-    kb = [
-        [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_message")]
-    ]
-    return InlineKeyboardMarkup(inline_keyboard=kb)
-
-
-
-def get_cancel_reply_keyboard() -> ReplyKeyboardMarkup:
-    """Reply-клавиатура с кнопкой 'Отмена' (для обычных сообщений)"""
-    kb = [[KeyboardButton(text="❌ Отмена")]]
-    return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True, one_time_keyboard=True)
-
-
-def get_admin_keyboard() -> InlineKeyboardMarkup:
-    """Клавиатура администратора"""
-    kb = [
-        [
-            InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats"),
-            InlineKeyboardButton(text="👥 Пользователи", callback_data="admin_users")
-        ],
-        [
-            InlineKeyboardButton(text="📨 Рассылка", callback_data="admin_broadcast"),
-            InlineKeyboardButton(text="💾 Бэкап", callback_data="admin_backup")
-        ],
-        [
-            InlineKeyboardButton(text="📋 Логи", callback_data="admin_logs"),
-            InlineKeyboardButton(text="💎 Подписки", callback_data="admin_subscriptions")
-        ],
-        [
-            InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_menu")
-        ]
-    ]
-    return InlineKeyboardMarkup(inline_keyboard=kb)
-
-
-def get_goal_inline_keyboard() -> InlineKeyboardMarkup:
-    """Inline-клавиатура для выбора цели"""
-    kb = [
-        [
-            InlineKeyboardButton(text="🎯 Похудение", callback_data="goal_weight_loss"),  # <-- ДОЛЖНО БЫТЬ goal_weight_loss
-            InlineKeyboardButton(text="💪 Набор", callback_data="goal_muscle_gain")       # <-- goal_muscle_gain
-        ],
-        [
-            InlineKeyboardButton(text="⚖️ Поддержание", callback_data="goal_maintain"),   # <-- goal_maintain
-            InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_registration")
-        ]
-    ]
-    return InlineKeyboardMarkup(inline_keyboard=kb)
