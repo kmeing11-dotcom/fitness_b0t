@@ -277,33 +277,32 @@ async def process_client_height(message: Message, state: FSMContext):
         )
 
 
-@router.callback_query(StateFilter(RegistrationStates.client_goal), F.data.startswith("goal_"))
+# ============================================================
+#  ОБРАБОТЧИКИ ВЫБОРА ЦЕЛИ (БЕЗ ПРОВЕРКИ СОСТОЯНИЯ)
+# ============================================================
+
+@router.callback_query(F.data.startswith("goal_"))
 async def process_client_goal_callback(callback: CallbackQuery, state: FSMContext):
     try:
         goal = callback.data.split("_")[1]  # goal_weight_loss -> weight_loss
+        logger.info(f"📥 Goal selected via callback: {goal}")
         await _finish_client_registration(callback.message, state, goal, callback=callback)
     except Exception as e:
         logger.error(f"Error in process_client_goal_callback: {e}")
         await callback.answer("❌ Ошибка", show_alert=True)
 
 
-@router.message(StateFilter(RegistrationStates.client_goal))
+@router.message(F.text.in_(["🎯 Похудение", "💪 Набор", "⚖️ Поддержание"]))
 async def process_client_goal_text(message: Message, state: FSMContext):
-    """Обработка текстового ввода цели (на случай, если пользователь введёт текстом)"""
     try:
         goal_map = {
-            "похудение": "weight_loss",
-            "набор": "muscle_gain",      # <-- ИСПРАВЛЕНО
-            "поддержание": "maintain"
+            "🎯 Похудение": "weight_loss",
+            "💪 Набор": "muscle_gain",
+            "⚖️ Поддержание": "maintain"
         }
-        goal = goal_map.get(message.text.lower())
-        if goal:
-            await _finish_client_registration(message, state, goal)
-        else:
-            await message.answer(
-                "❌ Пожалуйста, выберите цель с помощью кнопок.",
-                reply_markup=get_goal_inline_keyboard()
-            )
+        goal = goal_map.get(message.text)
+        logger.info(f"📥 Goal selected via text: {goal}")
+        await _finish_client_registration(message, state, goal)
     except Exception as e:
         logger.error(f"Error in process_client_goal_text: {e}")
         await message.answer("❌ Ошибка. Попробуйте ещё раз.")
@@ -349,10 +348,8 @@ async def _finish_client_registration(
             role=UserRole.CLIENT,
             age=data.get('age', 0),
             height=data.get('height', 0),
-            goal=goal  # <-- ДОЛЖНО БЫТЬ "weight_loss", "muscle_gain" или "maintain"
+            goal=goal
         )
-
-
 
         if not user:
             await message.answer(
