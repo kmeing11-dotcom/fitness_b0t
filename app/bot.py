@@ -1,13 +1,14 @@
-import asyncio
 import sys
 from pathlib import Path
+
+# Добавляем корневую папку в путь
+root_path = Path(__file__).parent.parent
+sys.path.insert(0, str(root_path))
+
+import asyncio
 from aiohttp import web
 import os
 import signal
-
-
-
-sys.path.append(str(Path(__file__).parent.parent))
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
@@ -43,6 +44,11 @@ class FitnessBot:
         except ValueError as e:
             logger.error(f"❌ Configuration error: {e}")
             raise
+
+        # ⚠️ ВРЕМЕННО: Сброс базы данных
+        # !!! УБЕРИ ЭТУ СТРОКУ ПОСЛЕ СБРОСА !!!
+        Database.drop_db()
+        
         init_db()
         logger.info("✅ Database initialized")
 
@@ -51,8 +57,6 @@ class FitnessBot:
         self.bot = Bot(
             token=Config.BOT_TOKEN,
             session=session,
-            # Убираем HTML-парсинг глобально
-            # default=DefaultBotProperties(parse_mode=ParseMode.HTML)
         )
         logger.info("✅ Bot created")
 
