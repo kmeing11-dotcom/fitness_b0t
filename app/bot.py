@@ -45,10 +45,6 @@ class FitnessBot:
             logger.error(f"❌ Configuration error: {e}")
             raise
 
-        # ⚠️ ВРЕМЕННО: Сброс базы данных
-        # !!! УБЕРИ ЭТУ СТРОКУ ПОСЛЕ СБРОСА !!!
-        Database.drop_db()
-        
         init_db()
         logger.info("✅ Database initialized")
 
