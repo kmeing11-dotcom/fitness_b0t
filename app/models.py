@@ -42,7 +42,7 @@ class User(Base):
     # Client fields
     age = Column(Integer, nullable=True)
     height = Column(Float, nullable=True)
-    goal = Column(Enum(Goal, name="goal"), nullable=True)
+    goal = Column(String(50), nullable=True)
 
     created_at = Column(DateTime, server_default=func.now())
     is_active = Column(Boolean, default=True)
