@@ -317,18 +317,18 @@ async def _finish_client_registration(
 ):
     try:
         logger.info(f"📝 Creating client profile for user {message.from_user.id}")
+        logger.info(f"📝 Goal received: {goal}")
 
-        # Правильные значения для enum goal
         goal_map = {
             "похудение": "weight_loss",
-            "набор": "muscle_gain",      # <-- ИСПРАВЛЕНО
+            "набор": "muscle_gain",
             "поддержание": "maintain",
             "weight_loss": "weight_loss",
-            "muscle_gain": "muscle_gain", # <-- ИСПРАВЛЕНО
+            "muscle_gain": "muscle_gain",
             "maintain": "maintain"
         }
 
-        # Если пришло "muscle" — исправляем на "muscle_gain"
+        # Если пришло "muscle" — исправляем
         if goal == "muscle":
             goal = "muscle_gain"
 
@@ -349,8 +349,10 @@ async def _finish_client_registration(
             role=UserRole.CLIENT,
             age=data.get('age', 0),
             height=data.get('height', 0),
-            goal=goal
+            goal=goal  # <-- ДОЛЖНО БЫТЬ "weight_loss", "muscle_gain" или "maintain"
         )
+
+
 
         if not user:
             await message.answer(
