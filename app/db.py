@@ -97,3 +97,6 @@ def init_db():
 
 # Создаём сессию для использования в handlers
 Session = Database.get_session()
+
+# В конце файла добавь:
+engine = Database.get_engine()
