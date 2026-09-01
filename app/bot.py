@@ -23,10 +23,65 @@ from app.handlers import (
 )
 from app.services.reminder_service import ReminderService
 from app.utils.logger import get_logger
-from app.db import init_db, Database
+from app.db import init_db, Database, engine
 from app.handlers.reminders import init_reminder_service
+from sqlalchemy import text
 
 logger = get_logger(__name__)
+
+
+def fix_goal_enum():
+    """Исправляет enum goal в PostgreSQL"""
+    try:
+        # Проверяем, что используется PostgreSQL
+        if not Config.DATABASE_URL or not Config.DATABASE_URL.startswith("postgresql"):
+            logger.info("Not using PostgreSQL, skipping enum fix")
+            return
+        
+        with engine.connect() as conn:
+            # Проверяем, существует ли enum goal
+            result = conn.execute(text(
+                "SELECT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'goal');"
+            ))
+            exists = result.scalar()
+            
+            if exists:
+                # Проверяем текущие значения
+                result = conn.execute(text("SELECT enum_range(NULL::goal);"))
+                values = result.fetchone()
+                if values:
+                    current_values = values[0][1:-1].split(',')
+                    logger.info(f"Current goal enum values: {current_values}")
+                    
+                    # Проверяем, есть ли weight_loss
+                    if 'weight_loss' not in current_values:
+                        logger.warning("⚠️ 'weight_loss' not found in enum, recreating...")
+                        conn.execute(text("DROP TYPE IF EXISTS goal CASCADE;"))
+                        conn.execute(text(
+                            "CREATE TYPE goal AS ENUM ('weight_loss', 'muscle_gain', 'maintain');"
+                        ))
+                        conn.commit()
+                        logger.info("✅ Goal enum recreated successfully!")
+                else:
+                    # Если enum существует но пустой
+                    logger.warning("⚠️ Goal enum exists but no values, recreating...")
+                    conn.execute(text("DROP TYPE IF EXISTS goal CASCADE;"))
+                    conn.execute(text(
+                        "CREATE TYPE goal AS ENUM ('weight_loss', 'muscle_gain', 'maintain');"
+                    ))
+                    conn.commit()
+                    logger.info("✅ Goal enum recreated successfully!")
+            else:
+                # Создаём enum если не существует
+                logger.info("Creating goal enum...")
+                conn.execute(text(
+                    "CREATE TYPE goal AS ENUM ('weight_loss', 'muscle_gain', 'maintain');"
+                ))
+                conn.commit()
+                logger.info("✅ Goal enum created successfully!")
+                
+    except Exception as e:
+        logger.error(f"Error fixing goal enum: {e}")
 
 
 class FitnessBot:
@@ -45,6 +100,9 @@ class FitnessBot:
             logger.error(f"❌ Configuration error: {e}")
             raise
 
+        # ВРЕМЕННО: Исправляем enum перед созданием таблиц
+        fix_goal_enum()
+        
         init_db()
         logger.info("✅ Database initialized")
 
@@ -138,8 +196,11 @@ class FitnessBot:
         self._running = False
 
         if self.dp and self.bot:
-            await self.dp.stop_polling()
-            logger.info("✅ Polling stopped")
+            try:
+                await self.dp.stop_polling()
+                logger.info("✅ Polling stopped")
+            except Exception as e:
+                logger.info(f"Polling already stopped: {e}")
 
         if self.reminder_service:
             await self.reminder_service.stop()
