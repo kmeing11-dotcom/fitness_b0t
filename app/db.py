@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, scoped_session
 from app.config import Config
 from app.models import Base
@@ -8,15 +8,12 @@ logger = logging.getLogger(__name__)
 
 
 class Database:
-    """Класс для управления подключением к БД"""
-
     _engine = None
     _session_factory = None
     _scoped_session = None
 
     @classmethod
     def get_engine(cls):
-        """Создаёт и возвращает engine (ленивая инициализация)"""
         if cls._engine is None:
             try:
                 connect_args = {}
@@ -38,7 +35,6 @@ class Database:
 
     @classmethod
     def get_session_factory(cls):
-        """Возвращает фабрику сессий"""
         if cls._session_factory is None:
             cls._session_factory = sessionmaker(
                 bind=cls.get_engine(),
@@ -50,14 +46,12 @@ class Database:
 
     @classmethod
     def get_session(cls):
-        """Возвращает scoped сессию (потокобезопасную)"""
         if cls._scoped_session is None:
             cls._scoped_session = scoped_session(cls.get_session_factory())
         return cls._scoped_session
 
     @classmethod
     def init_db(cls):
-        """Создаёт все таблицы, если их нет"""
         try:
             Base.metadata.create_all(cls.get_engine())
             logger.info("Database tables created/verified successfully")
@@ -67,7 +61,6 @@ class Database:
 
     @classmethod
     def drop_db(cls):
-        """Удаляет все таблицы (ТОЛЬКО ДЛЯ ТЕСТОВ!)"""
         if Config.ENV == "development":
             Base.metadata.drop_all(cls.get_engine())
             logger.warning("All database tables dropped!")
@@ -76,13 +69,11 @@ class Database:
 
     @classmethod
     def close_session(cls):
-        """Закрывает текущую сессию"""
         if cls._scoped_session is not None:
             cls._scoped_session.remove()
             logger.debug("Database session closed")
 
 
-# Для обратной совместимости
 def get_engine():
     return Database.get_engine()
 
@@ -95,8 +86,35 @@ def init_db():
     Database.init_db()
 
 
+def add_missing_columns():
+    """Добавляет недостающие колонки в таблицы"""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            # Проверяем колонку goal
+            result = conn.execute(text(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name='users' AND column_name='goal';"
+            ))
+            if not result.fetchone():
+                conn.execute(text("ALTER TABLE users ADD COLUMN goal VARCHAR(50);"))
+                conn.commit()
+                logger.info("✅ Column 'goal' added to users table")
+
+            # Проверяем колонку timezone
+            result = conn.execute(text(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name='users' AND column_name='timezone';"
+            ))
+            if not result.fetchone():
+                conn.execute(text("ALTER TABLE users ADD COLUMN timezone VARCHAR(50) DEFAULT 'Europe/Moscow';"))
+                conn.commit()
+                logger.info("✅ Column 'timezone' added to users table")
+                
+    except Exception as e:
+        logger.error(f"Error adding missing columns: {e}")
+
+
 # Создаём сессию для использования в handlers
 Session = Database.get_session()
-
-# В конце файла добавь:
 engine = Database.get_engine()
