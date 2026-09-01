@@ -65,36 +65,36 @@ class DatabaseService:
                 session.expunge(user)
             return user
 
-def create_user(self, telegram_id, username, full_name, role, **kwargs):
-    """Создаёт нового пользователя или обновляет существующего"""
-    with self._get_session() as session:
-        existing_user = session.query(User).filter(User.telegram_id == telegram_id).first()
-        
-        if existing_user:
-            existing_user.username = username
-            existing_user.full_name = full_name
-            existing_user.role = role
-            for key, value in kwargs.items():
-                if hasattr(existing_user, key):
-                    setattr(existing_user, key, value)
+    def create_user(self, telegram_id, username, full_name, role, **kwargs):
+        """Создаёт нового пользователя или обновляет существующего"""
+        with self._get_session() as session:
+            existing_user = session.query(User).filter(User.telegram_id == telegram_id).first()
+            
+            if existing_user:
+                existing_user.username = username
+                existing_user.full_name = full_name
+                existing_user.role = role
+                for key, value in kwargs.items():
+                    if hasattr(existing_user, key):
+                        setattr(existing_user, key, value)
+                session.flush()
+                session.expunge(existing_user)
+                logger.info(f"✅ User updated: {existing_user.telegram_id}")
+                return existing_user
+            
+            user = User(
+                telegram_id=telegram_id,
+                username=username,
+                full_name=full_name,
+                role=role,
+                **kwargs
+            )
+            session.add(user)
             session.flush()
-            session.expunge(existing_user)  # <-- ДОБАВИТЬ
-            logger.info(f"✅ User updated: {existing_user.telegram_id}")
-            return existing_user
-        
-        user = User(
-            telegram_id=telegram_id,
-            username=username,
-            full_name=full_name,
-            role=role,
-            **kwargs
-        )
-        session.add(user)
-        session.flush()
-        session.expunge(user)  # <-- ДОБАВИТЬ
-        logger.info(f"✅ User created: {user.telegram_id}")
-        return user
-        
+            session.expunge(user)
+            logger.info(f"✅ User created: {user.telegram_id}")
+            return user
+
     def update_user(self, user_id: int, **kwargs):
         with self._get_session() as session:
             user = session.query(User).filter(User.id == user_id).first()
