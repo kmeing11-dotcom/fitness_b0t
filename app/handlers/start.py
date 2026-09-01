@@ -316,23 +316,32 @@ async def _finish_client_registration(
 ):
     try:
         logger.info(f"📝 Creating client profile for user {message.from_user.id}")
-        logger.info(f"📝 Goal received: {goal}")
+        logger.info(f"📝 Goal received: '{goal}' (type: {type(goal)})")
 
+        # Нормализуем цель
+        goal = goal.lower().strip()
+        
+        # Если пришло "weight" — исправляем на "weight_loss"
+        if goal == "weight":
+            goal = "weight_loss"
+        elif goal == "muscle":
+            goal = "muscle_gain"
+        elif goal == "maintain":
+            goal = "maintain"
+        
+        # Маппинг целей
         goal_map = {
-            "похудение": "weight_loss",
-            "набор": "muscle_gain",
-            "поддержание": "maintain",
             "weight_loss": "weight_loss",
             "muscle_gain": "muscle_gain",
-            "maintain": "maintain"
+            "maintain": "maintain",
+            "похудение": "weight_loss",
+            "набор": "muscle_gain",
+            "поддержание": "maintain"
         }
-
-        # Если пришло "muscle" — исправляем
-        if goal == "muscle":
-            goal = "muscle_gain"
 
         goal = goal_map.get(goal)
         if not goal:
+            logger.error(f"❌ Invalid goal: {goal}")
             await message.answer(
                 "❌ Неверная цель. Пожалуйста, выберите цель с помощью кнопок.",
                 reply_markup=get_goal_inline_keyboard()
