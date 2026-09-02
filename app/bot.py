@@ -101,7 +101,6 @@ class FitnessBot:
         add_missing_columns()
         
         # Инициализируем БД (создаёт таблицы, если их нет)
-        Database.drop_db()
         init_db()
         logger.info("✅ Database initialized")
 
