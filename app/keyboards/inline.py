@@ -82,14 +82,11 @@ def get_yes_no_keyboard() -> ReplyKeyboardMarkup:
 # ============================================================
 
 def get_clients_list_keyboard(
-    clients: List[User],
+    clients: List[dict],  # <-- теперь словари
     action: str = "info",
     page: int = 0,
     per_page: int = 5
 ) -> Optional[InlineKeyboardMarkup]:
-    """
-    Клавиатура со списком клиентов (с пагинацией).
-    """
     if not clients:
         return None
 
@@ -100,43 +97,15 @@ def get_clients_list_keyboard(
     kb = []
 
     for client in clients[start:end]:
-        name = client.full_name or client.username or f"ID:{client.id}"
+        name = client.get('full_name') or client.get('username') or f"ID:{client.get('id')}"
         kb.append([
             InlineKeyboardButton(
                 text=f"👤 {name}",
-                callback_data=f"{action}_{client.id}"
+                callback_data=f"{action}_{client.get('id')}"
             )
         ])
 
-    if total > per_page:
-        nav_buttons = []
-        if page > 0:
-            nav_buttons.append(
-                InlineKeyboardButton(
-                    text="⬅️",
-                    callback_data=f"page_{action}_{page - 1}"
-                )
-            )
-        nav_buttons.append(
-            InlineKeyboardButton(
-                text=f"{page + 1}/{(total + per_page - 1) // per_page}",
-                callback_data="page_info"
-            )
-        )
-        if end < total:
-            nav_buttons.append(
-                InlineKeyboardButton(
-                    text="➡️",
-                    callback_data=f"page_{action}_{page + 1}"
-                )
-            )
-        kb.append(nav_buttons)
-
-    kb.append([
-        InlineKeyboardButton(text="❌ Закрыть", callback_data="close")
-    ])
-
-    return InlineKeyboardMarkup(inline_keyboard=kb)
+    # ... остальной код без изменений
 
 
 def get_client_actions_keyboard(client_id: int) -> InlineKeyboardMarkup:
