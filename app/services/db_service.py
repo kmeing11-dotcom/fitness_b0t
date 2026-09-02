@@ -29,7 +29,6 @@ class DatabaseService:
 
     @contextmanager
     def _get_session(self):
-        """Контекстный менеджер для сессии с обработкой ошибок"""
         session = self.Session()
         try:
             yield session
@@ -45,26 +44,17 @@ class DatabaseService:
 
     def get_user(self, user_id: int):
         with self._get_session() as session:
-            user = session.query(User).filter(User.id == user_id).first()
-            if user:
-                session.expunge(user)
-            return user
+            return session.query(User).filter(User.id == user_id).first()
 
     def get_user_by_telegram(self, telegram_id: int):
         with self._get_session() as session:
-            user = session.query(User).filter(User.telegram_id == telegram_id).first()
-            if user:
-                session.expunge(user)  # <-- ОТКРЕПЛЯЕМ ОБЪЕКТ ПЕРЕД ВОЗВРАТОМ
-            return user
+            return session.query(User).filter(User.telegram_id == telegram_id).first()
 
     def get_user_by_username(self, username: str):
         if not username:
             return None
         with self._get_session() as session:
-            user = session.query(User).filter(User.username == username).first()
-            if user:
-                session.expunge(user)
-            return user
+            return session.query(User).filter(User.username == username).first()
 
     def create_user(self, telegram_id, username, full_name, role, **kwargs):
         """Создаёт нового пользователя или обновляет существующего"""
@@ -72,7 +62,6 @@ class DatabaseService:
             existing_user = session.query(User).filter(User.telegram_id == telegram_id).first()
             
             if existing_user:
-                # Обновляем существующего пользователя
                 existing_user.username = username
                 existing_user.full_name = full_name
                 existing_user.role = role
@@ -80,12 +69,8 @@ class DatabaseService:
                     if hasattr(existing_user, key):
                         setattr(existing_user, key, value)
                 session.flush()
-                session.refresh(existing_user)  # <-- ОБНОВЛЯЕМ ДАННЫЕ
-                session.expunge(existing_user)  # <-- ОТКРЕПЛЯЕМ
-                logger.info(f"✅ User updated: {existing_user.telegram_id}")
                 return existing_user
             
-            # Создаём нового пользователя
             user = User(
                 telegram_id=telegram_id,
                 username=username,
@@ -95,9 +80,6 @@ class DatabaseService:
             )
             session.add(user)
             session.flush()
-            session.refresh(user)  # <-- ОБНОВЛЯЕМ ДАННЫЕ (ПОЛУЧАЕМ ID)
-            session.expunge(user)  # <-- ОТКРЕПЛЯЕМ
-            logger.info(f"✅ User created: {user.telegram_id}")
             return user
 
     def update_user(self, user_id: int, **kwargs):
@@ -108,74 +90,54 @@ class DatabaseService:
                     if hasattr(user, key):
                         setattr(user, key, value)
                 session.flush()
-                session.refresh(user)
-                session.expunge(user)
                 return user
             return None
 
     def get_all_users(self):
         with self._get_session() as session:
-            users = session.query(User).all()
-            for user in users:
-                session.expunge(user)
-            return users
+            return session.query(User).all()
 
     def get_users_by_role(self, role: UserRole):
         with self._get_session() as session:
-            users = session.query(User).filter(
+            return session.query(User).filter(
                 User.role == role,
                 User.is_active == True
             ).all()
-            for user in users:
-                session.expunge(user)
-            return users
 
     def get_users_by_ids(self, user_ids: list):
         if not user_ids:
             return []
         with self._get_session() as session:
-            users = session.query(User).filter(User.id.in_(user_ids)).all()
-            for user in users:
-                session.expunge(user)
-            return users
+            return session.query(User).filter(User.id.in_(user_ids)).all()
 
     # ====================== CLIENTS ======================
 
     def get_trainer_clients(self, trainer_id: int):
         with self._get_session() as session:
-            users = session.query(User).join(
+            return session.query(User).join(
                 TrainerClient, User.id == TrainerClient.client_id
             ).filter(
                 TrainerClient.trainer_id == trainer_id,
                 TrainerClient.is_active == True,
                 User.is_active == True
             ).all()
-            for user in users:
-                session.expunge(user)
-            return users
 
     def get_trainer_clients_full(self, trainer_id: int):
         with self._get_session() as session:
-            clients = session.query(TrainerClient).filter(
+            return session.query(TrainerClient).filter(
                 TrainerClient.trainer_id == trainer_id,
                 TrainerClient.is_active == True
             ).all()
-            for client in clients:
-                session.expunge(client)
-            return clients
 
     def get_client_trainers(self, client_id: int):
         with self._get_session() as session:
-            users = session.query(User).join(
+            return session.query(User).join(
                 TrainerClient, User.id == TrainerClient.trainer_id
             ).filter(
                 TrainerClient.client_id == client_id,
                 TrainerClient.is_active == True,
                 User.is_active == True
             ).all()
-            for user in users:
-                session.expunge(user)
-            return users
 
     def add_client_to_trainer(self, trainer_id: int, client_id: int) -> bool:
         with self._get_session() as session:
@@ -218,20 +180,15 @@ class DatabaseService:
             m = Measurement(user_id=user_id, **data)
             session.add(m)
             session.flush()
-            session.refresh(m)
-            session.expunge(m)
             return m
 
     def get_measurements(self, user_id: int, days: int = 30):
         cutoff = datetime.now() - timedelta(days=days)
         with self._get_session() as session:
-            measurements = session.query(Measurement).filter(
+            return session.query(Measurement).filter(
                 Measurement.user_id == user_id,
                 Measurement.measured_at >= cutoff
             ).order_by(Measurement.measured_at.asc()).all()
-            for m in measurements:
-                session.expunge(m)
-            return measurements
 
     def get_all_measurements(self, user_id: int, limit: int = None):
         with self._get_session() as session:
@@ -240,28 +197,19 @@ class DatabaseService:
             ).order_by(Measurement.measured_at.desc())
             if limit:
                 query = query.limit(limit)
-            measurements = query.all()
-            for m in measurements:
-                session.expunge(m)
-            return measurements
+            return query.all()
 
     def get_last_measurement(self, user_id: int):
         with self._get_session() as session:
-            m = session.query(Measurement).filter(
+            return session.query(Measurement).filter(
                 Measurement.user_id == user_id
             ).order_by(Measurement.measured_at.desc()).first()
-            if m:
-                session.expunge(m)
-            return m
 
     def get_first_measurement(self, user_id: int):
         with self._get_session() as session:
-            m = session.query(Measurement).filter(
+            return session.query(Measurement).filter(
                 Measurement.user_id == user_id
             ).order_by(Measurement.measured_at.asc()).first()
-            if m:
-                session.expunge(m)
-            return m
 
     def get_measurement_stats(self, user_id: int, days: int = 30):
         with self._get_session() as session:
@@ -290,26 +238,18 @@ class DatabaseService:
             )
             session.add(reminder)
             session.flush()
-            session.refresh(reminder)
-            session.expunge(reminder)
             return reminder
 
     def get_trainer_reminders(self, trainer_id: int):
         with self._get_session() as session:
-            reminders = session.query(Reminder).filter(
+            return session.query(Reminder).filter(
                 Reminder.trainer_id == trainer_id,
                 Reminder.is_active == True
             ).all()
-            for r in reminders:
-                session.expunge(r)
-            return reminders
 
     def get_reminder(self, reminder_id: int):
         with self._get_session() as session:
-            reminder = session.query(Reminder).filter(Reminder.id == reminder_id).first()
-            if reminder:
-                session.expunge(reminder)
-            return reminder
+            return session.query(Reminder).filter(Reminder.id == reminder_id).first()
 
     def update_reminder(self, reminder_id: int, **kwargs):
         with self._get_session() as session:
@@ -319,8 +259,6 @@ class DatabaseService:
                     if hasattr(reminder, key):
                         setattr(reminder, key, value)
                 session.flush()
-                session.refresh(reminder)
-                session.expunge(reminder)
                 return reminder
             return None
 
@@ -338,20 +276,15 @@ class DatabaseService:
             )
             session.add(log)
             session.flush()
-            session.refresh(log)
-            session.expunge(log)
             return log
 
     def get_reminder_logs(self, client_id: int, days: int = 30):
         cutoff = datetime.now() - timedelta(days=days)
         with self._get_session() as session:
-            logs = session.query(ReminderLog).filter(
+            return session.query(ReminderLog).filter(
                 ReminderLog.client_id == client_id,
                 ReminderLog.sent_at >= cutoff
             ).all()
-            for log in logs:
-                session.expunge(log)
-            return logs
 
     # ====================== BROADCAST ======================
 
@@ -360,8 +293,6 @@ class DatabaseService:
             b = Broadcast(message=message, sent_by=sender_id, recipients_count=0)
             session.add(b)
             session.flush()
-            session.refresh(b)
-            session.expunge(b)
             return b.id
 
     def update_broadcast_count(self, broadcast_id: int, count: int):
@@ -372,24 +303,18 @@ class DatabaseService:
 
     def get_broadcasts(self, limit: int = 10):
         with self._get_session() as session:
-            broadcasts = session.query(Broadcast).order_by(
+            return session.query(Broadcast).order_by(
                 Broadcast.sent_at.desc()
             ).limit(limit).all()
-            for b in broadcasts:
-                session.expunge(b)
-            return broadcasts
 
     # ====================== SUBSCRIPTIONS ======================
 
     def get_user_subscription(self, user_id: int):
         with self._get_session() as session:
-            sub = session.query(Subscription).filter(
+            return session.query(Subscription).filter(
                 Subscription.user_id == user_id,
                 Subscription.is_active == True
             ).first()
-            if sub:
-                session.expunge(sub)
-            return sub
 
     def set_trial_subscription(self, user_id: int, days: int = 7):
         with self._get_session() as session:
@@ -406,8 +331,6 @@ class DatabaseService:
             )
             session.add(sub)
             session.flush()
-            session.refresh(sub)
-            session.expunge(sub)
             return sub
 
     def set_subscription(self, user_id: int, plan: str, days: int = 30):
@@ -425,8 +348,6 @@ class DatabaseService:
             )
             session.add(sub)
             session.flush()
-            session.refresh(sub)
-            session.expunge(sub)
             return sub
 
     def cancel_subscription(self, user_id: int) -> bool:
@@ -454,13 +375,10 @@ class DatabaseService:
 
     def get_expired_subscriptions(self):
         with self._get_session() as session:
-            subs = session.query(Subscription).filter(
+            return session.query(Subscription).filter(
                 Subscription.is_active == True,
                 Subscription.expires_at <= datetime.now()
             ).all()
-            for sub in subs:
-                session.expunge(sub)
-            return subs
 
     # ====================== STATISTICS ======================
 
