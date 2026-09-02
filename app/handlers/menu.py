@@ -20,10 +20,6 @@ router = Router()
 db = DatabaseService()
 
 
-# ============================================================
-#  ГЛАВНОЕ МЕНЮ
-# ============================================================
-
 @router.message(F.text == "🔙 Назад")
 async def back_to_menu(message: Message):
     try:
@@ -35,17 +31,17 @@ async def back_to_menu(message: Message):
             )
             return
 
-        if user.role == UserRole.TRAINER:
+        if user['role'] == UserRole.TRAINER.value:
             await message.answer(
                 f"👋 <b>Главное меню тренера</b>\n\n"
-                f"Добро пожаловать, {user.full_name or 'Тренер'}!",
+                f"Добро пожаловать, {user['full_name'] or 'Тренер'}!",
                 parse_mode=ParseMode.HTML,
                 reply_markup=get_trainer_menu_keyboard()
             )
         else:
             await message.answer(
                 f"👋 <b>Главное меню ученика</b>\n\n"
-                f"Добро пожаловать, {user.full_name or 'Ученик'}!",
+                f"Добро пожаловать, {user['full_name'] or 'Ученик'}!",
                 parse_mode=ParseMode.HTML,
                 reply_markup=get_client_menu_keyboard()
             )
@@ -53,10 +49,6 @@ async def back_to_menu(message: Message):
         logger.error(f"Error in back_to_menu: {e}")
         await message.answer("❌ Ошибка при загрузке меню.")
 
-
-# ============================================================
-#  МЕНЮ ТРЕНЕРА
-# ============================================================
 
 @router.message(F.text == "👥 Мои ученики")
 async def show_clients(message: Message):
@@ -66,11 +58,11 @@ async def show_clients(message: Message):
             await message.answer("❌ Вы не зарегистрированы. Используйте /start.")
             return
 
-        if user.role != UserRole.TRAINER:
+        if user['role'] != UserRole.TRAINER.value:
             await message.answer("❌ Эта функция доступна только тренерам.")
             return
 
-        clients = db.get_trainer_clients(user.id)
+        clients = db.get_trainer_clients(user['id'])
 
         if not clients:
             await message.answer(
@@ -81,6 +73,8 @@ async def show_clients(message: Message):
             )
             return
 
+        # Конвертируем словари обратно в объекты для клавиатуры (или переписываем клавиатуру)
+        # Временно: передаём словари как есть
         keyboard = get_clients_list_keyboard(clients, action="info")
 
         await message.answer(
@@ -99,11 +93,11 @@ async def show_clients(message: Message):
 async def menu_stats(message: Message):
     try:
         user = db.get_user_by_telegram(message.from_user.id)
-        if not user or user.role != UserRole.TRAINER:
+        if not user or user['role'] != UserRole.TRAINER.value:
             await message.answer("❌ Только для тренеров.")
             return
 
-        clients = db.get_trainer_clients(user.id)
+        clients = db.get_trainer_clients(user['id'])
 
         if not clients:
             await message.answer(
@@ -130,11 +124,11 @@ async def menu_stats(message: Message):
 async def menu_reports(message: Message):
     try:
         user = db.get_user_by_telegram(message.from_user.id)
-        if not user or user.role != UserRole.TRAINER:
+        if not user or user['role'] != UserRole.TRAINER.value:
             await message.answer("❌ Только для тренеров.")
             return
 
-        clients = db.get_trainer_clients(user.id)
+        clients = db.get_trainer_clients(user['id'])
 
         if not clients:
             await message.answer(
@@ -162,11 +156,11 @@ async def menu_reports(message: Message):
 async def menu_reminders(message: Message):
     try:
         user = db.get_user_by_telegram(message.from_user.id)
-        if not user or user.role != UserRole.TRAINER:
+        if not user or user['role'] != UserRole.TRAINER.value:
             await message.answer("❌ Только для тренеров.")
             return
 
-        reminders = db.get_trainer_reminders(user.id)
+        reminders = db.get_trainer_reminders(user['id'])
 
         status_text = f"({len(reminders)} настроено)" if reminders else "(нет напоминаний)"
 
@@ -189,11 +183,11 @@ async def menu_reminders(message: Message):
 async def menu_broadcast(message: Message):
     try:
         user = db.get_user_by_telegram(message.from_user.id)
-        if not user or user.role != UserRole.TRAINER:
+        if not user or user['role'] != UserRole.TRAINER.value:
             await message.answer("❌ Только для тренеров.")
             return
 
-        clients = db.get_trainer_clients(user.id)
+        clients = db.get_trainer_clients(user['id'])
 
         if not clients:
             await message.answer(
@@ -226,17 +220,17 @@ async def menu_settings(message: Message):
             return
 
         text = f"⚙️ <b>Настройки</b>\n\n"
-        text += f"👤 Имя: {user.full_name or 'Не указано'}\n"
-        text += f"📱 Username: @{user.username or 'Не указан'}\n"
-        text += f"🎯 Роль: {'Тренер' if user.role == UserRole.TRAINER else 'Ученик'}\n"
+        text += f"👤 Имя: {user['full_name'] or 'Не указано'}\n"
+        text += f"📱 Username: @{user['username'] or 'Не указан'}\n"
+        text += f"🎯 Роль: {'Тренер' if user['role'] == UserRole.TRAINER.value else 'Ученик'}\n"
 
-        if user.role == UserRole.CLIENT:
-            text += f"🎂 Возраст: {user.age or 'Не указан'}\n"
-            text += f"📏 Рост: {user.height or 'Не указан'} см\n"
-            text += f"🎯 Цель: {user.goal or 'Не указана'}\n"
-        elif user.role == UserRole.TRAINER:
-            text += f"📱 Телефон: {user.phone or 'Не указан'}\n"
-            text += f"🏢 Студия: {user.studio_name or 'Не указана'}\n"
+        if user['role'] == UserRole.CLIENT.value:
+            text += f"🎂 Возраст: {user['age'] or 'Не указан'}\n"
+            text += f"📏 Рост: {user['height'] or 'Не указан'} см\n"
+            text += f"🎯 Цель: {user['goal'] or 'Не указана'}\n"
+        elif user['role'] == UserRole.TRAINER.value:
+            text += f"📱 Телефон: {user['phone'] or 'Не указан'}\n"
+            text += f"🏢 Студия: {user['studio_name'] or 'Не указана'}\n"
 
         text += f"\n<i>Команды для управления:</i>\n"
         text += f"• /edit_profile — изменить профиль\n"
@@ -269,19 +263,11 @@ async def menu_help(message: Message):
         await message.answer("❌ Ошибка при загрузке помощи.")
 
 
-# ============================================================
-#  МЕНЮ УЧЕНИКА
-# ============================================================
-
 @router.message(F.text == "📝 Внести замеры")
 async def menu_measurements(message: Message, state: FSMContext):
     try:
         user = db.get_user_by_telegram(message.from_user.id)
-        if not user:
-            await message.answer("❌ Вы не зарегистрированы. Используйте /start.")
-            return
-
-        if user.role != UserRole.CLIENT:
+        if not user or user['role'] != UserRole.CLIENT.value:
             await message.answer("❌ Эта функция доступна только ученикам.")
             return
 
@@ -297,7 +283,7 @@ async def menu_measurements(message: Message, state: FSMContext):
 async def menu_progress(message: Message):
     try:
         user = db.get_user_by_telegram(message.from_user.id)
-        if not user or user.role != UserRole.CLIENT:
+        if not user or user['role'] != UserRole.CLIENT.value:
             await message.answer("❌ Только для учеников.")
             return
 
@@ -313,7 +299,7 @@ async def menu_progress(message: Message):
 async def menu_my_report(message: Message):
     try:
         user = db.get_user_by_telegram(message.from_user.id)
-        if not user or user.role != UserRole.CLIENT:
+        if not user or user['role'] != UserRole.CLIENT.value:
             await message.answer("❌ Только для учеников.")
             return
 
