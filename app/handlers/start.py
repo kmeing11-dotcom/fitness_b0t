@@ -43,20 +43,19 @@ async def cmd_start(message: Message, state: FSMContext):
     try:
         logger.info(f"✅ /start called by user {message.from_user.id}")
 
-        # Получаем пользователя через "сырой" запрос, без кеша
         user = db.get_user_by_telegram(message.from_user.id)
         logger.info(f"✅ User found: {user is not None}")
 
         if user:
             await state.clear()
-            if user.role == UserRole.TRAINER:
+            if user['role'] == UserRole.TRAINER.value:
                 await message.answer(
-                    f"👋 С возвращением, {user.full_name or 'Тренер'}!",
+                    f"👋 С возвращением, {user['full_name'] or 'Тренер'}!",
                     reply_markup=get_trainer_menu_keyboard()
                 )
             else:
                 await message.answer(
-                    f"👋 С возвращением, {user.full_name or 'Ученик'}!",
+                    f"👋 С возвращением, {user['full_name'] or 'Ученик'}!",
                     reply_markup=get_client_menu_keyboard()
                 )
             return
@@ -74,6 +73,7 @@ async def cmd_start(message: Message, state: FSMContext):
     except Exception as e:
         logger.error(f"Error in cmd_start: {e}\n{traceback.format_exc()}")
         await message.answer(f"❌ Ошибка: {str(e)[:200]}")
+
 
 # ============================================================
 #  ОБРАБОТЧИКИ ВЫБОРА РОЛИ
@@ -182,15 +182,15 @@ async def process_trainer_studio(message: Message, state: FSMContext):
 
         await message.answer(
             f"✅ Профиль тренера создан!\n\n"
-            f"👤 Имя: {user.full_name}\n"
-            f"📱 Телефон: {user.phone or 'Не указан'}\n"
-            f"🏢 Студия: {user.studio_name or 'Не указана'}\n\n"
+            f"👤 Имя: {user['full_name']}\n"
+            f"📱 Телефон: {user['phone'] or 'Не указан'}\n"
+            f"🏢 Студия: {user['studio_name'] or 'Не указана'}\n\n"
             "Теперь вы можете добавлять учеников через меню.",
             reply_markup=get_trainer_menu_keyboard()
         )
         await state.clear()
 
-        logger.info(f"✅ New trainer registered: {user.telegram_id} ({user.full_name})")
+        logger.info(f"✅ New trainer registered: {user['telegram_id']} ({user['full_name']})")
 
     except Exception as e:
         logger.error(f"Error in process_trainer_studio: {e}\n{traceback.format_exc()}")
@@ -277,15 +277,11 @@ async def process_client_height(message: Message, state: FSMContext):
         )
 
 
-# ============================================================
-#  ОБРАБОТЧИКИ ВЫБОРА ЦЕЛИ (БЕЗ ПРОВЕРКИ СОСТОЯНИЯ)
-# ============================================================
-
 @router.callback_query(F.data.startswith("goal_"))
 async def process_client_goal_callback(callback: CallbackQuery, state: FSMContext):
     try:
-        goal = callback.data.split("_")[1]  # goal_weight_loss -> weight_loss
-        logger.info(f"📥 Goal selected via callback: {goal}")
+        goal = callback.data.split("_")[1]
+        logger.info(f"📥 Goal selected via callback: '{goal}'")
         await _finish_client_registration(callback.message, state, goal, callback=callback)
     except Exception as e:
         logger.error(f"Error in process_client_goal_callback: {e}")
@@ -301,7 +297,7 @@ async def process_client_goal_text(message: Message, state: FSMContext):
             "⚖️ Поддержание": "maintain"
         }
         goal = goal_map.get(message.text)
-        logger.info(f"📥 Goal selected via text: {goal}")
+        logger.info(f"📥 Goal selected via text: '{goal}'")
         await _finish_client_registration(message, state, goal)
     except Exception as e:
         logger.error(f"Error in process_client_goal_text: {e}")
@@ -321,7 +317,7 @@ async def _finish_client_registration(
         # Нормализуем цель
         goal = goal.lower().strip()
         
-        # Если пришло "weight" — исправляем на "weight_loss"
+        # Если пришло короткое значение — исправляем
         if goal == "weight":
             goal = "weight_loss"
         elif goal == "muscle":
@@ -375,16 +371,16 @@ async def _finish_client_registration(
 
         await message.answer(
             f"✅ Профиль ученика создан!\n\n"
-            f"👤 Имя: {user.full_name}\n"
-            f"🎂 Возраст: {user.age} лет\n"
-            f"📏 Рост: {user.height} см\n"
+            f"👤 Имя: {user['full_name']}\n"
+            f"🎂 Возраст: {user['age']} лет\n"
+            f"📏 Рост: {user['height']} см\n"
             f"🎯 Цель: {goal_ru}\n\n"
             "Теперь вы можете вносить замеры через меню.",
             reply_markup=get_client_menu_keyboard()
         )
         await state.clear()
 
-        logger.info(f"✅ New client registered: {user.telegram_id} ({user.full_name})")
+        logger.info(f"✅ New client registered: {user['telegram_id']} ({user['full_name']})")
 
         if callback:
             await callback.answer()
@@ -399,10 +395,6 @@ async def _finish_client_registration(
         if callback:
             await callback.answer("❌ Ошибка", show_alert=True)
 
-
-# ============================================================
-#  ОТМЕНА РЕГИСТРАЦИИ
-# ============================================================
 
 @router.callback_query(F.data == "cancel_registration")
 async def cancel_registration_callback(callback: CallbackQuery, state: FSMContext):
