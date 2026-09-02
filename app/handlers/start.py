@@ -43,6 +43,7 @@ async def cmd_start(message: Message, state: FSMContext):
     try:
         logger.info(f"✅ /start called by user {message.from_user.id}")
 
+        # Получаем пользователя через "сырой" запрос, без кеша
         user = db.get_user_by_telegram(message.from_user.id)
         logger.info(f"✅ User found: {user is not None}")
 
@@ -73,7 +74,6 @@ async def cmd_start(message: Message, state: FSMContext):
     except Exception as e:
         logger.error(f"Error in cmd_start: {e}\n{traceback.format_exc()}")
         await message.answer(f"❌ Ошибка: {str(e)[:200]}")
-
 
 # ============================================================
 #  ОБРАБОТЧИКИ ВЫБОРА РОЛИ
