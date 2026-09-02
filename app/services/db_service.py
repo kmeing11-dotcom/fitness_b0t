@@ -80,6 +80,7 @@ class DatabaseService:
             )
             session.add(user)
             session.flush()
+            # НЕ используем refresh и expunge — просто возвращаем объект
             return user
 
     def update_user(self, user_id: int, **kwargs):
