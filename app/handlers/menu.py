@@ -31,7 +31,7 @@ async def back_to_menu(message: Message):
             )
             return
 
-        if user['role'] == UserRole.TRAINER.value:
+        if user['role'] == 'trainer':
             await message.answer(
                 f"👋 <b>Главное меню тренера</b>\n\n"
                 f"Добро пожаловать, {user['full_name'] or 'Тренер'}!",
@@ -58,7 +58,7 @@ async def show_clients(message: Message):
             await message.answer("❌ Вы не зарегистрированы. Используйте /start.")
             return
 
-        if user['role'] != UserRole.TRAINER.value:
+        if user['role'] != 'trainer':
             await message.answer("❌ Эта функция доступна только тренерам.")
             return
 
@@ -73,8 +73,6 @@ async def show_clients(message: Message):
             )
             return
 
-        # Конвертируем словари обратно в объекты для клавиатуры (или переписываем клавиатуру)
-        # Временно: передаём словари как есть
         keyboard = get_clients_list_keyboard(clients, action="info")
 
         await message.answer(
@@ -93,7 +91,7 @@ async def show_clients(message: Message):
 async def menu_stats(message: Message):
     try:
         user = db.get_user_by_telegram(message.from_user.id)
-        if not user or user['role'] != UserRole.TRAINER.value:
+        if not user or user['role'] != 'trainer':
             await message.answer("❌ Только для тренеров.")
             return
 
@@ -124,7 +122,7 @@ async def menu_stats(message: Message):
 async def menu_reports(message: Message):
     try:
         user = db.get_user_by_telegram(message.from_user.id)
-        if not user or user['role'] != UserRole.TRAINER.value:
+        if not user or user['role'] != 'trainer':
             await message.answer("❌ Только для тренеров.")
             return
 
@@ -156,7 +154,7 @@ async def menu_reports(message: Message):
 async def menu_reminders(message: Message):
     try:
         user = db.get_user_by_telegram(message.from_user.id)
-        if not user or user['role'] != UserRole.TRAINER.value:
+        if not user or user['role'] != 'trainer':
             await message.answer("❌ Только для тренеров.")
             return
 
@@ -183,7 +181,7 @@ async def menu_reminders(message: Message):
 async def menu_broadcast(message: Message):
     try:
         user = db.get_user_by_telegram(message.from_user.id)
-        if not user or user['role'] != UserRole.TRAINER.value:
+        if not user or user['role'] != 'trainer':
             await message.answer("❌ Только для тренеров.")
             return
 
@@ -222,13 +220,13 @@ async def menu_settings(message: Message):
         text = f"⚙️ <b>Настройки</b>\n\n"
         text += f"👤 Имя: {user['full_name'] or 'Не указано'}\n"
         text += f"📱 Username: @{user['username'] or 'Не указан'}\n"
-        text += f"🎯 Роль: {'Тренер' if user['role'] == UserRole.TRAINER.value else 'Ученик'}\n"
+        text += f"🎯 Роль: {'Тренер' if user['role'] == 'trainer' else 'Ученик'}\n"
 
-        if user['role'] == UserRole.CLIENT.value:
+        if user['role'] == 'client':
             text += f"🎂 Возраст: {user['age'] or 'Не указан'}\n"
             text += f"📏 Рост: {user['height'] or 'Не указан'} см\n"
             text += f"🎯 Цель: {user['goal'] or 'Не указана'}\n"
-        elif user['role'] == UserRole.TRAINER.value:
+        elif user['role'] == 'trainer':
             text += f"📱 Телефон: {user['phone'] or 'Не указан'}\n"
             text += f"🏢 Студия: {user['studio_name'] or 'Не указана'}\n"
 
@@ -267,7 +265,7 @@ async def menu_help(message: Message):
 async def menu_measurements(message: Message, state: FSMContext):
     try:
         user = db.get_user_by_telegram(message.from_user.id)
-        if not user or user['role'] != UserRole.CLIENT.value:
+        if not user or user['role'] != 'client':
             await message.answer("❌ Эта функция доступна только ученикам.")
             return
 
@@ -283,7 +281,7 @@ async def menu_measurements(message: Message, state: FSMContext):
 async def menu_progress(message: Message):
     try:
         user = db.get_user_by_telegram(message.from_user.id)
-        if not user or user['role'] != UserRole.CLIENT.value:
+        if not user or user['role'] != 'client':
             await message.answer("❌ Только для учеников.")
             return
 
@@ -299,7 +297,7 @@ async def menu_progress(message: Message):
 async def menu_my_report(message: Message):
     try:
         user = db.get_user_by_telegram(message.from_user.id)
-        if not user or user['role'] != UserRole.CLIENT.value:
+        if not user or user['role'] != 'client':
             await message.answer("❌ Только для учеников.")
             return
 
