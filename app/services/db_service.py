@@ -10,8 +10,6 @@ logger = get_logger(__name__)
 
 
 class DatabaseService:
-    """Сервис для работы с базой данных"""
-
     def __init__(self):
         connect_args = {}
         if Config.DATABASE_URL and Config.DATABASE_URL.startswith("sqlite"):
@@ -40,72 +38,21 @@ class DatabaseService:
         finally:
             session.close()
 
-    # ====================== USER ======================
-
     def get_user(self, user_id: int):
         with self._get_session() as session:
-            user = session.query(User).filter(User.id == user_id).first()
-            if user:
-                return {
-                    'id': user.id,
-                    'telegram_id': user.telegram_id,
-                    'username': user.username,
-                    'full_name': user.full_name,
-                    'role': user.role.value if user.role else None,
-                    'phone': user.phone,
-                    'studio_name': user.studio_name,
-                    'age': user.age,
-                    'height': user.height,
-                    'goal': user.goal,
-                    'created_at': user.created_at,
-                    'is_active': user.is_active
-                }
-            return None
+            return session.query(User).filter(User.id == user_id).first()
 
     def get_user_by_telegram(self, telegram_id: int):
         with self._get_session() as session:
-            user = session.query(User).filter(User.telegram_id == telegram_id).first()
-            if user:
-                return {
-                    'id': user.id,
-                    'telegram_id': user.telegram_id,
-                    'username': user.username,
-                    'full_name': user.full_name,
-                    'role': user.role.value if user.role else None,
-                    'phone': user.phone,
-                    'studio_name': user.studio_name,
-                    'age': user.age,
-                    'height': user.height,
-                    'goal': user.goal,
-                    'created_at': user.created_at,
-                    'is_active': user.is_active
-                }
-            return None
+            return session.query(User).filter(User.telegram_id == telegram_id).first()
 
     def get_user_by_username(self, username: str):
         if not username:
             return None
         with self._get_session() as session:
-            user = session.query(User).filter(User.username == username).first()
-            if user:
-                return {
-                    'id': user.id,
-                    'telegram_id': user.telegram_id,
-                    'username': user.username,
-                    'full_name': user.full_name,
-                    'role': user.role.value if user.role else None,
-                    'phone': user.phone,
-                    'studio_name': user.studio_name,
-                    'age': user.age,
-                    'height': user.height,
-                    'goal': user.goal,
-                    'created_at': user.created_at,
-                    'is_active': user.is_active
-                }
-            return None
+            return session.query(User).filter(User.username == username).first()
 
     def create_user(self, telegram_id, username, full_name, role, **kwargs):
-        """Создаёт нового пользователя и возвращает словарь"""
         with self._get_session() as session:
             existing_user = session.query(User).filter(User.telegram_id == telegram_id).first()
             
@@ -118,20 +65,7 @@ class DatabaseService:
                         setattr(existing_user, key, value)
                 session.flush()
                 logger.info(f"✅ User updated: {existing_user.telegram_id}")
-                return {
-                    'id': existing_user.id,
-                    'telegram_id': existing_user.telegram_id,
-                    'username': existing_user.username,
-                    'full_name': existing_user.full_name,
-                    'role': existing_user.role.value if existing_user.role else None,
-                    'phone': existing_user.phone,
-                    'studio_name': existing_user.studio_name,
-                    'age': existing_user.age,
-                    'height': existing_user.height,
-                    'goal': existing_user.goal,
-                    'created_at': existing_user.created_at,
-                    'is_active': existing_user.is_active
-                }
+                return existing_user
             
             user = User(
                 telegram_id=telegram_id,
@@ -143,20 +77,7 @@ class DatabaseService:
             session.add(user)
             session.flush()
             logger.info(f"✅ User created: {user.telegram_id}")
-            return {
-                'id': user.id,
-                'telegram_id': user.telegram_id,
-                'username': user.username,
-                'full_name': user.full_name,
-                'role': user.role.value if user.role else None,
-                'phone': user.phone,
-                'studio_name': user.studio_name,
-                'age': user.age,
-                'height': user.height,
-                'goal': user.goal,
-                'created_at': user.created_at,
-                'is_active': user.is_active
-            }
+            return user
 
     def update_user(self, user_id: int, **kwargs):
         with self._get_session() as session:
@@ -166,162 +87,52 @@ class DatabaseService:
                     if hasattr(user, key):
                         setattr(user, key, value)
                 session.flush()
-                return {
-                    'id': user.id,
-                    'telegram_id': user.telegram_id,
-                    'username': user.username,
-                    'full_name': user.full_name,
-                    'role': user.role.value if user.role else None,
-                    'phone': user.phone,
-                    'studio_name': user.studio_name,
-                    'age': user.age,
-                    'height': user.height,
-                    'goal': user.goal,
-                    'created_at': user.created_at,
-                    'is_active': user.is_active
-                }
+                return user
             return None
 
     def get_all_users(self):
         with self._get_session() as session:
-            users = session.query(User).all()
-            result = []
-            for user in users:
-                result.append({
-                    'id': user.id,
-                    'telegram_id': user.telegram_id,
-                    'username': user.username,
-                    'full_name': user.full_name,
-                    'role': user.role.value if user.role else None,
-                    'phone': user.phone,
-                    'studio_name': user.studio_name,
-                    'age': user.age,
-                    'height': user.height,
-                    'goal': user.goal,
-                    'created_at': user.created_at,
-                    'is_active': user.is_active
-                })
-            return result
+            return session.query(User).all()
 
     def get_users_by_role(self, role: UserRole):
         with self._get_session() as session:
-            users = session.query(User).filter(
+            return session.query(User).filter(
                 User.role == role,
                 User.is_active == True
             ).all()
-            result = []
-            for user in users:
-                result.append({
-                    'id': user.id,
-                    'telegram_id': user.telegram_id,
-                    'username': user.username,
-                    'full_name': user.full_name,
-                    'role': user.role.value if user.role else None,
-                    'phone': user.phone,
-                    'studio_name': user.studio_name,
-                    'age': user.age,
-                    'height': user.height,
-                    'goal': user.goal,
-                    'created_at': user.created_at,
-                    'is_active': user.is_active
-                })
-            return result
 
     def get_users_by_ids(self, user_ids: list):
         if not user_ids:
             return []
         with self._get_session() as session:
-            users = session.query(User).filter(User.id.in_(user_ids)).all()
-            result = []
-            for user in users:
-                result.append({
-                    'id': user.id,
-                    'telegram_id': user.telegram_id,
-                    'username': user.username,
-                    'full_name': user.full_name,
-                    'role': user.role.value if user.role else None,
-                    'phone': user.phone,
-                    'studio_name': user.studio_name,
-                    'age': user.age,
-                    'height': user.height,
-                    'goal': user.goal,
-                    'created_at': user.created_at,
-                    'is_active': user.is_active
-                })
-            return result
-
-    # ====================== CLIENTS ======================
+            return session.query(User).filter(User.id.in_(user_ids)).all()
 
     def get_trainer_clients(self, trainer_id: int):
         with self._get_session() as session:
-            users = session.query(User).join(
+            return session.query(User).join(
                 TrainerClient, User.id == TrainerClient.client_id
             ).filter(
                 TrainerClient.trainer_id == trainer_id,
                 TrainerClient.is_active == True,
                 User.is_active == True
             ).all()
-            result = []
-            for user in users:
-                result.append({
-                    'id': user.id,
-                    'telegram_id': user.telegram_id,
-                    'username': user.username,
-                    'full_name': user.full_name,
-                    'role': user.role.value if user.role else None,
-                    'phone': user.phone,
-                    'studio_name': user.studio_name,
-                    'age': user.age,
-                    'height': user.height,
-                    'goal': user.goal,
-                    'created_at': user.created_at,
-                    'is_active': user.is_active
-                })
-            return result
 
     def get_trainer_clients_full(self, trainer_id: int):
         with self._get_session() as session:
-            clients = session.query(TrainerClient).filter(
+            return session.query(TrainerClient).filter(
                 TrainerClient.trainer_id == trainer_id,
                 TrainerClient.is_active == True
             ).all()
-            result = []
-            for client in clients:
-                result.append({
-                    'id': client.id,
-                    'trainer_id': client.trainer_id,
-                    'client_id': client.client_id,
-                    'created_at': client.created_at,
-                    'is_active': client.is_active
-                })
-            return result
 
     def get_client_trainers(self, client_id: int):
         with self._get_session() as session:
-            users = session.query(User).join(
+            return session.query(User).join(
                 TrainerClient, User.id == TrainerClient.trainer_id
             ).filter(
                 TrainerClient.client_id == client_id,
                 TrainerClient.is_active == True,
                 User.is_active == True
             ).all()
-            result = []
-            for user in users:
-                result.append({
-                    'id': user.id,
-                    'telegram_id': user.telegram_id,
-                    'username': user.username,
-                    'full_name': user.full_name,
-                    'role': user.role.value if user.role else None,
-                    'phone': user.phone,
-                    'studio_name': user.studio_name,
-                    'age': user.age,
-                    'height': user.height,
-                    'goal': user.goal,
-                    'created_at': user.created_at,
-                    'is_active': user.is_active
-                })
-            return result
 
     def add_client_to_trainer(self, trainer_id: int, client_id: int) -> bool:
         with self._get_session() as session:
@@ -357,46 +168,20 @@ class DatabaseService:
                 TrainerClient.is_active == True
             ).first() is not None
 
-    # ====================== MEASUREMENTS ======================
-
     def create_measurement(self, user_id: int, data: dict):
         with self._get_session() as session:
             m = Measurement(user_id=user_id, **data)
             session.add(m)
             session.flush()
-            return {
-                'id': m.id,
-                'user_id': m.user_id,
-                'weight': m.weight,
-                'waist': m.waist,
-                'hips': m.hips,
-                'chest': m.chest,
-                'biceps': m.biceps,
-                'measured_at': m.measured_at,
-                'notes': m.notes
-            }
+            return m
 
     def get_measurements(self, user_id: int, days: int = 30):
         cutoff = datetime.now() - timedelta(days=days)
         with self._get_session() as session:
-            measurements = session.query(Measurement).filter(
+            return session.query(Measurement).filter(
                 Measurement.user_id == user_id,
                 Measurement.measured_at >= cutoff
             ).order_by(Measurement.measured_at.asc()).all()
-            result = []
-            for m in measurements:
-                result.append({
-                    'id': m.id,
-                    'user_id': m.user_id,
-                    'weight': m.weight,
-                    'waist': m.waist,
-                    'hips': m.hips,
-                    'chest': m.chest,
-                    'biceps': m.biceps,
-                    'measured_at': m.measured_at,
-                    'notes': m.notes
-                })
-            return result
 
     def get_all_measurements(self, user_id: int, limit: int = None):
         with self._get_session() as session:
@@ -405,64 +190,24 @@ class DatabaseService:
             ).order_by(Measurement.measured_at.desc())
             if limit:
                 query = query.limit(limit)
-            measurements = query.all()
-            result = []
-            for m in measurements:
-                result.append({
-                    'id': m.id,
-                    'user_id': m.user_id,
-                    'weight': m.weight,
-                    'waist': m.waist,
-                    'hips': m.hips,
-                    'chest': m.chest,
-                    'biceps': m.biceps,
-                    'measured_at': m.measured_at,
-                    'notes': m.notes
-                })
-            return result
+            return query.all()
 
     def get_last_measurement(self, user_id: int):
         with self._get_session() as session:
-            m = session.query(Measurement).filter(
+            return session.query(Measurement).filter(
                 Measurement.user_id == user_id
             ).order_by(Measurement.measured_at.desc()).first()
-            if m:
-                return {
-                    'id': m.id,
-                    'user_id': m.user_id,
-                    'weight': m.weight,
-                    'waist': m.waist,
-                    'hips': m.hips,
-                    'chest': m.chest,
-                    'biceps': m.biceps,
-                    'measured_at': m.measured_at,
-                    'notes': m.notes
-                }
-            return None
 
     def get_first_measurement(self, user_id: int):
         with self._get_session() as session:
-            m = session.query(Measurement).filter(
+            return session.query(Measurement).filter(
                 Measurement.user_id == user_id
             ).order_by(Measurement.measured_at.asc()).first()
-            if m:
-                return {
-                    'id': m.id,
-                    'user_id': m.user_id,
-                    'weight': m.weight,
-                    'waist': m.waist,
-                    'hips': m.hips,
-                    'chest': m.chest,
-                    'biceps': m.biceps,
-                    'measured_at': m.measured_at,
-                    'notes': m.notes
-                }
-            return None
 
     def get_measurement_stats(self, user_id: int, days: int = 30):
         with self._get_session() as session:
             from sqlalchemy import func
-            stats = session.query(
+            return session.query(
                 func.min(Measurement.weight).label('min_weight'),
                 func.max(Measurement.weight).label('max_weight'),
                 func.avg(Measurement.weight).label('avg_weight'),
@@ -471,16 +216,6 @@ class DatabaseService:
                 Measurement.user_id == user_id,
                 Measurement.measured_at >= datetime.now() - timedelta(days=days)
             ).first()
-            if stats:
-                return {
-                    'min_weight': stats.min_weight,
-                    'max_weight': stats.max_weight,
-                    'avg_weight': stats.avg_weight,
-                    'total': stats.total
-                }
-            return None
-
-    # ====================== REMINDERS ======================
 
     def create_reminder(self, trainer_id: int, day_of_week: int, time_str: str):
         from datetime import time
@@ -494,63 +229,28 @@ class DatabaseService:
             )
             session.add(reminder)
             session.flush()
-            return {
-                'id': reminder.id,
-                'trainer_id': reminder.trainer_id,
-                'day_of_week': reminder.day_of_week,
-                'time': reminder.time.strftime("%H:%M"),
-                'is_active': reminder.is_active,
-                'created_at': reminder.created_at
-            }
+            return reminder
 
     def get_trainer_reminders(self, trainer_id: int):
         with self._get_session() as session:
-            reminders = session.query(Reminder).filter(
+            return session.query(Reminder).filter(
                 Reminder.trainer_id == trainer_id,
                 Reminder.is_active == True
             ).all()
-            result = []
-            for r in reminders:
-                result.append({
-                    'id': r.id,
-                    'trainer_id': r.trainer_id,
-                    'day_of_week': r.day_of_week,
-                    'time': r.time.strftime("%H:%M"),
-                    'is_active': r.is_active,
-                    'created_at': r.created_at
-                })
-            return result
 
     def get_reminder(self, reminder_id: int):
         with self._get_session() as session:
-            r = session.query(Reminder).filter(Reminder.id == reminder_id).first()
-            if r:
-                return {
-                    'id': r.id,
-                    'trainer_id': r.trainer_id,
-                    'day_of_week': r.day_of_week,
-                    'time': r.time.strftime("%H:%M"),
-                    'is_active': r.is_active,
-                    'created_at': r.created_at
-                }
-            return None
+            return session.query(Reminder).filter(Reminder.id == reminder_id).first()
 
     def update_reminder(self, reminder_id: int, **kwargs):
         with self._get_session() as session:
-            r = session.query(Reminder).filter(Reminder.id == reminder_id).first()
-            if r:
+            reminder = session.query(Reminder).filter(Reminder.id == reminder_id).first()
+            if reminder:
                 for key, value in kwargs.items():
-                    if hasattr(r, key):
-                        setattr(r, key, value)
+                    if hasattr(reminder, key):
+                        setattr(reminder, key, value)
                 session.flush()
-                return {
-                    'id': r.id,
-                    'trainer_id': r.trainer_id,
-                    'day_of_week': r.day_of_week,
-                    'time': r.time.strftime("%H:%M"),
-                    'is_active': r.is_active,
-                    'created_at': r.created_at
-                }
+                return reminder
             return None
 
     def delete_reminder(self, reminder_id: int):
@@ -567,35 +267,15 @@ class DatabaseService:
             )
             session.add(log)
             session.flush()
-            return {
-                'id': log.id,
-                'reminder_id': log.reminder_id,
-                'client_id': log.client_id,
-                'sent_at': log.sent_at,
-                'is_followup': log.is_followup,
-                'is_acknowledged': log.is_acknowledged
-            }
+            return log
 
     def get_reminder_logs(self, client_id: int, days: int = 30):
         cutoff = datetime.now() - timedelta(days=days)
         with self._get_session() as session:
-            logs = session.query(ReminderLog).filter(
+            return session.query(ReminderLog).filter(
                 ReminderLog.client_id == client_id,
                 ReminderLog.sent_at >= cutoff
             ).all()
-            result = []
-            for log in logs:
-                result.append({
-                    'id': log.id,
-                    'reminder_id': log.reminder_id,
-                    'client_id': log.client_id,
-                    'sent_at': log.sent_at,
-                    'is_followup': log.is_followup,
-                    'is_acknowledged': log.is_acknowledged
-                })
-            return result
-
-    # ====================== BROADCAST ======================
 
     def broadcast_message(self, message: str, sender_id: int):
         with self._get_session() as session:
@@ -612,38 +292,16 @@ class DatabaseService:
 
     def get_broadcasts(self, limit: int = 10):
         with self._get_session() as session:
-            broadcasts = session.query(Broadcast).order_by(
+            return session.query(Broadcast).order_by(
                 Broadcast.sent_at.desc()
             ).limit(limit).all()
-            result = []
-            for b in broadcasts:
-                result.append({
-                    'id': b.id,
-                    'message': b.message,
-                    'sent_by': b.sent_by,
-                    'sent_at': b.sent_at,
-                    'recipients_count': b.recipients_count
-                })
-            return result
-
-    # ====================== SUBSCRIPTIONS ======================
 
     def get_user_subscription(self, user_id: int):
         with self._get_session() as session:
-            sub = session.query(Subscription).filter(
+            return session.query(Subscription).filter(
                 Subscription.user_id == user_id,
                 Subscription.is_active == True
             ).first()
-            if sub:
-                return {
-                    'id': sub.id,
-                    'user_id': sub.user_id,
-                    'plan': sub.plan,
-                    'expires_at': sub.expires_at,
-                    'created_at': sub.created_at,
-                    'is_active': sub.is_active
-                }
-            return None
 
     def set_trial_subscription(self, user_id: int, days: int = 7):
         with self._get_session() as session:
@@ -660,14 +318,7 @@ class DatabaseService:
             )
             session.add(sub)
             session.flush()
-            return {
-                'id': sub.id,
-                'user_id': sub.user_id,
-                'plan': sub.plan,
-                'expires_at': sub.expires_at,
-                'created_at': sub.created_at,
-                'is_active': sub.is_active
-            }
+            return sub
 
     def set_subscription(self, user_id: int, plan: str, days: int = 30):
         with self._get_session() as session:
@@ -684,14 +335,7 @@ class DatabaseService:
             )
             session.add(sub)
             session.flush()
-            return {
-                'id': sub.id,
-                'user_id': sub.user_id,
-                'plan': sub.plan,
-                'expires_at': sub.expires_at,
-                'created_at': sub.created_at,
-                'is_active': sub.is_active
-            }
+            return sub
 
     def cancel_subscription(self, user_id: int) -> bool:
         with self._get_session() as session:
@@ -718,23 +362,10 @@ class DatabaseService:
 
     def get_expired_subscriptions(self):
         with self._get_session() as session:
-            subs = session.query(Subscription).filter(
+            return session.query(Subscription).filter(
                 Subscription.is_active == True,
                 Subscription.expires_at <= datetime.now()
             ).all()
-            result = []
-            for sub in subs:
-                result.append({
-                    'id': sub.id,
-                    'user_id': sub.user_id,
-                    'plan': sub.plan,
-                    'expires_at': sub.expires_at,
-                    'created_at': sub.created_at,
-                    'is_active': sub.is_active
-                })
-            return result
-
-    # ====================== STATISTICS ======================
 
     def get_daily_measurements_count(self) -> int:
         today = datetime.now().date()
