@@ -62,28 +62,25 @@ class DatabaseService:
                 }
             return None
 
-  def get_user_by_telegram(self, telegram_id: int):
-    logger.info(f"🔍 [get_user_by_telegram] searching for {telegram_id}")
-    with self._get_session() as session:
-        user = session.query(User).filter(User.telegram_id == telegram_id).first()
-        if user:
-            logger.info(f"🔍 [get_user_by_telegram] found user: id={user.id}, role={user.role}, role.value={user.role.value if user.role else None}")
-            return {
-                'id': user.id,
-                'telegram_id': user.telegram_id,
-                'username': user.username,
-                'full_name': user.full_name,
-                'role': user.role.value if user.role else None,
-                'phone': user.phone,
-                'studio_name': user.studio_name,
-                'age': user.age,
-                'height': user.height,
-                'goal': user.goal,
-                'created_at': user.created_at,
-                'is_active': user.is_active
-            }
-        logger.info(f"🔍 [get_user_by_telegram] user not found")
-        return None
+    def get_user_by_telegram(self, telegram_id: int):
+        with self._get_session() as session:
+            user = session.query(User).filter(User.telegram_id == telegram_id).first()
+            if user:
+                return {
+                    'id': user.id,
+                    'telegram_id': user.telegram_id,
+                    'username': user.username,
+                    'full_name': user.full_name,
+                    'role': user.role.value if user.role else None,
+                    'phone': user.phone,
+                    'studio_name': user.studio_name,
+                    'age': user.age,
+                    'height': user.height,
+                    'goal': user.goal,
+                    'created_at': user.created_at,
+                    'is_active': user.is_active
+                }
+            return None
 
     def get_user_by_username(self, username: str):
         if not username:
@@ -108,9 +105,8 @@ class DatabaseService:
             return None
 
     def create_user(self, telegram_id, username, full_name, role, **kwargs):
-        """Создаёт нового пользователя и возвращает словарь с данными"""
+        """Создаёт нового пользователя и возвращает словарь"""
         with self._get_session() as session:
-            # Проверяем, существует ли пользователь
             existing_user = session.query(User).filter(User.telegram_id == telegram_id).first()
             
             if existing_user:
