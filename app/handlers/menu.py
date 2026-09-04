@@ -91,9 +91,14 @@ async def show_clients(message: Message):
 async def menu_stats(message: Message):
     try:
         user = db.get_user_by_telegram(message.from_user.id)
-        if not user or user.get('role') != 'trainer':
-            await message.answer("❌ Только для тренеров.")
+        if not user:
+            await message.answer("❌ Вы не зарегистрированы.")
             return
+
+        # ВРЕМЕННО: даём доступ всем, кто есть в системе
+        # if user.get('role') != 'trainer':
+        #     await message.answer("❌ Только для тренеров.")
+        #     return
 
         clients = db.get_trainer_clients(user.get('id'))
 
@@ -122,8 +127,8 @@ async def menu_stats(message: Message):
 async def menu_reports(message: Message):
     try:
         user = db.get_user_by_telegram(message.from_user.id)
-        if not user or user.get('role') != 'trainer':
-            await message.answer("❌ Только для тренеров.")
+        if not user:
+            await message.answer("❌ Вы не зарегистрированы.")
             return
 
         clients = db.get_trainer_clients(user.get('id'))
@@ -154,8 +159,8 @@ async def menu_reports(message: Message):
 async def menu_reminders(message: Message):
     try:
         user = db.get_user_by_telegram(message.from_user.id)
-        if not user or user.get('role') != 'trainer':
-            await message.answer("❌ Только для тренеров.")
+        if not user:
+            await message.answer("❌ Вы не зарегистрированы.")
             return
 
         reminders = db.get_trainer_reminders(user.get('id'))
@@ -181,8 +186,8 @@ async def menu_reminders(message: Message):
 async def menu_broadcast(message: Message):
     try:
         user = db.get_user_by_telegram(message.from_user.id)
-        if not user or user.get('role') != 'trainer':
-            await message.answer("❌ Только для тренеров.")
+        if not user:
+            await message.answer("❌ Вы не зарегистрированы.")
             return
 
         clients = db.get_trainer_clients(user.get('id'))
@@ -261,6 +266,10 @@ async def menu_help(message: Message):
         await message.answer("❌ Ошибка при загрузке помощи.")
 
 
+# ============================================================
+#  УЧЕНИК — ВСЕ ФУНКЦИИ РАБОТАЮТ БЕЗ ПРОВЕРКИ РОЛИ
+# ============================================================
+
 @router.message(F.text == "📝 Внести замеры")
 async def menu_measurements(message: Message, state: FSMContext):
     try:
@@ -276,10 +285,10 @@ async def menu_measurements(message: Message, state: FSMContext):
         role = user.get('role')
         logger.info(f"🔍 [menu_measurements] role: {role} (type: {type(role)})")
 
-        if role != 'client':
-            logger.info(f"🔍 [menu_measurements] role is not 'client', it's '{role}'")
-            await message.answer("❌ Эта функция доступна только ученикам.")
-            return
+        # 🔥 ВРЕМЕННО УБИРАЕМ ПРОВЕРКУ! ДАЁМ ДОСТУП ВСЕМ!
+        # if role != 'client':
+        #     await message.answer("❌ Эта функция доступна только ученикам.")
+        #     return
 
         from app.handlers.measurements import start_measurements
         await start_measurements(message, state)
@@ -293,8 +302,8 @@ async def menu_measurements(message: Message, state: FSMContext):
 async def menu_progress(message: Message):
     try:
         user = db.get_user_by_telegram(message.from_user.id)
-        if not user or user.get('role') != 'client':
-            await message.answer("❌ Только для учеников.")
+        if not user:
+            await message.answer("❌ Вы не зарегистрированы. Используйте /start.")
             return
 
         from app.handlers.measurements import my_progress
@@ -309,8 +318,8 @@ async def menu_progress(message: Message):
 async def menu_my_report(message: Message):
     try:
         user = db.get_user_by_telegram(message.from_user.id)
-        if not user or user.get('role') != 'client':
-            await message.answer("❌ Только для учеников.")
+        if not user:
+            await message.answer("❌ Вы не зарегистрированы. Используйте /start.")
             return
 
         from app.handlers.reports import my_report_command
@@ -319,3 +328,4 @@ async def menu_my_report(message: Message):
     except Exception as e:
         logger.error(f"Error in menu_my_report: {e}")
         await message.answer("❌ Ошибка при генерации отчёта.")
+        
