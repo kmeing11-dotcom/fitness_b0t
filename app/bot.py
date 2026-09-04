@@ -1,7 +1,6 @@
 import sys
 from pathlib import Path
 
-# Добавляем корневую папку в путь
 root_path = Path(__file__).parent.parent
 sys.path.insert(0, str(root_path))
 
@@ -23,7 +22,7 @@ from app.handlers import (
 )
 from app.services.reminder_service import ReminderService
 from app.utils.logger import get_logger
-from app.db import init_db, Database, engine, add_missing_columns
+from app.db import init_db, Database, engine
 from app.handlers.reminders import init_reminder_service
 from sqlalchemy import text
 
@@ -31,16 +30,13 @@ logger = get_logger(__name__)
 
 
 def fix_goal_enum():
-    """Исправляет enum goal в PostgreSQL"""
     try:
         if not Config.DATABASE_URL or not Config.DATABASE_URL.startswith("postgresql"):
             logger.info("Not using PostgreSQL, skipping enum fix")
             return
         
         with engine.connect() as conn:
-            result = conn.execute(text(
-                "SELECT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'goal');"
-            ))
+            result = conn.execute(text("SELECT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'goal');"))
             exists = result.scalar()
             
             if exists:
@@ -53,24 +49,18 @@ def fix_goal_enum():
                     if 'weight_loss' not in current_values:
                         logger.warning("⚠️ 'weight_loss' not found in enum, recreating...")
                         conn.execute(text("DROP TYPE IF EXISTS goal CASCADE;"))
-                        conn.execute(text(
-                            "CREATE TYPE goal AS ENUM ('weight_loss', 'muscle_gain', 'maintain');"
-                        ))
+                        conn.execute(text("CREATE TYPE goal AS ENUM ('weight_loss', 'muscle_gain', 'maintain');"))
                         conn.commit()
                         logger.info("✅ Goal enum recreated successfully!")
                 else:
                     logger.warning("⚠️ Goal enum exists but no values, recreating...")
                     conn.execute(text("DROP TYPE IF EXISTS goal CASCADE;"))
-                    conn.execute(text(
-                        "CREATE TYPE goal AS ENUM ('weight_loss', 'muscle_gain', 'maintain');"
-                    ))
+                    conn.execute(text("CREATE TYPE goal AS ENUM ('weight_loss', 'muscle_gain', 'maintain');"))
                     conn.commit()
                     logger.info("✅ Goal enum recreated successfully!")
             else:
                 logger.info("Creating goal enum...")
-                conn.execute(text(
-                    "CREATE TYPE goal AS ENUM ('weight_loss', 'muscle_gain', 'maintain');"
-                ))
+                conn.execute(text("CREATE TYPE goal AS ENUM ('weight_loss', 'muscle_gain', 'maintain');"))
                 conn.commit()
                 logger.info("✅ Goal enum created successfully!")
                 
@@ -94,13 +84,7 @@ class FitnessBot:
             logger.error(f"❌ Configuration error: {e}")
             raise
 
-        # Исправляем enum перед созданием таблиц
         fix_goal_enum()
-        
-        # Добавляем недостающие колонки
-        add_missing_columns()
-        
-        # Инициализируем БД (создаёт таблицы, если их нет)
         init_db()
         logger.info("✅ Database initialized")
 
