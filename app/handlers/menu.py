@@ -264,12 +264,20 @@ async def menu_help(message: Message):
 @router.message(F.text == "📝 Внести замеры")
 async def menu_measurements(message: Message, state: FSMContext):
     try:
+        logger.info(f"🔍 [menu_measurements] START for user {message.from_user.id}")
+        
         user = db.get_user_by_telegram(message.from_user.id)
+        logger.info(f"🔍 [menu_measurements] user data: {user}")
+        
         if not user:
             await message.answer("❌ Вы не зарегистрированы. Используйте /start.")
             return
 
-        if user.get('role') != 'client':
+        role = user.get('role')
+        logger.info(f"🔍 [menu_measurements] role: {role} (type: {type(role)})")
+
+        if role != 'client':
+            logger.info(f"🔍 [menu_measurements] role is not 'client', it's '{role}'")
             await message.answer("❌ Эта функция доступна только ученикам.")
             return
 
