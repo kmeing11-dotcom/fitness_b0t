@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, scoped_session
 from app.config import Config
 from app.models import Base
@@ -86,35 +86,5 @@ def init_db():
     Database.init_db()
 
 
-def add_missing_columns():
-    """Добавляет недостающие колонки в таблицы"""
-    try:
-        engine = get_engine()
-        with engine.connect() as conn:
-            # Проверяем колонку goal
-            result = conn.execute(text(
-                "SELECT column_name FROM information_schema.columns "
-                "WHERE table_name='users' AND column_name='goal';"
-            ))
-            if not result.fetchone():
-                conn.execute(text("ALTER TABLE users ADD COLUMN goal VARCHAR(50);"))
-                conn.commit()
-                logger.info("✅ Column 'goal' added to users table")
-
-            # Проверяем колонку timezone
-            result = conn.execute(text(
-                "SELECT column_name FROM information_schema.columns "
-                "WHERE table_name='users' AND column_name='timezone';"
-            ))
-            if not result.fetchone():
-                conn.execute(text("ALTER TABLE users ADD COLUMN timezone VARCHAR(50) DEFAULT 'Europe/Moscow';"))
-                conn.commit()
-                logger.info("✅ Column 'timezone' added to users table")
-                
-    except Exception as e:
-        logger.error(f"Error adding missing columns: {e}")
-
-
-# Создаём сессию для использования в handlers
 Session = Database.get_session()
 engine = Database.get_engine()
