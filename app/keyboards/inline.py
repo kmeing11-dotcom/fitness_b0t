@@ -395,7 +395,6 @@ def get_admin_keyboard() -> InlineKeyboardMarkup:
 # ============================================================
 
 def get_goal_inline_keyboard() -> InlineKeyboardMarkup:
-    """Inline-клавиатура для выбора цели"""
     kb = [
         [
             InlineKeyboardButton(text="🎯 Похудение", callback_data="goal_weight_loss"),
@@ -407,7 +406,6 @@ def get_goal_inline_keyboard() -> InlineKeyboardMarkup:
         ]
     ]
     return InlineKeyboardMarkup(inline_keyboard=kb)
-
 
 # ============================================================
 #  ОБЩИЕ КЛАВИАТУРЫ
