@@ -38,19 +38,40 @@ class DatabaseService:
         finally:
             session.close()
 
+    def _user_to_dict(self, user):
+        if not user:
+            return None
+        return {
+            'id': user.id,
+            'telegram_id': user.telegram_id,
+            'username': user.username,
+            'full_name': user.full_name,
+            'role': user.role.value if user.role else None,
+            'phone': user.phone,
+            'studio_name': user.studio_name,
+            'age': user.age,
+            'height': user.height,
+            'goal': user.goal,
+            'created_at': user.created_at,
+            'is_active': user.is_active
+        }
+
     def get_user(self, user_id: int):
         with self._get_session() as session:
-            return session.query(User).filter(User.id == user_id).first()
+            user = session.query(User).filter(User.id == user_id).first()
+            return self._user_to_dict(user)
 
     def get_user_by_telegram(self, telegram_id: int):
         with self._get_session() as session:
-            return session.query(User).filter(User.telegram_id == telegram_id).first()
+            user = session.query(User).filter(User.telegram_id == telegram_id).first()
+            return self._user_to_dict(user)
 
     def get_user_by_username(self, username: str):
         if not username:
             return None
         with self._get_session() as session:
-            return session.query(User).filter(User.username == username).first()
+            user = session.query(User).filter(User.username == username).first()
+            return self._user_to_dict(user)
 
     def create_user(self, telegram_id, username, full_name, role, **kwargs):
         with self._get_session() as session:
@@ -65,7 +86,7 @@ class DatabaseService:
                         setattr(existing_user, key, value)
                 session.flush()
                 logger.info(f"✅ User updated: {existing_user.telegram_id}")
-                return existing_user
+                return self._user_to_dict(existing_user)
             
             user = User(
                 telegram_id=telegram_id,
@@ -77,7 +98,7 @@ class DatabaseService:
             session.add(user)
             session.flush()
             logger.info(f"✅ User created: {user.telegram_id}")
-            return user
+            return self._user_to_dict(user)
 
     def update_user(self, user_id: int, **kwargs):
         with self._get_session() as session:
@@ -87,52 +108,67 @@ class DatabaseService:
                     if hasattr(user, key):
                         setattr(user, key, value)
                 session.flush()
-                return user
+                return self._user_to_dict(user)
             return None
 
     def get_all_users(self):
         with self._get_session() as session:
-            return session.query(User).all()
+            users = session.query(User).all()
+            return [self._user_to_dict(u) for u in users]
 
     def get_users_by_role(self, role: UserRole):
         with self._get_session() as session:
-            return session.query(User).filter(
+            users = session.query(User).filter(
                 User.role == role,
                 User.is_active == True
             ).all()
+            return [self._user_to_dict(u) for u in users]
 
     def get_users_by_ids(self, user_ids: list):
         if not user_ids:
             return []
         with self._get_session() as session:
-            return session.query(User).filter(User.id.in_(user_ids)).all()
+            users = session.query(User).filter(User.id.in_(user_ids)).all()
+            return [self._user_to_dict(u) for u in users]
 
     def get_trainer_clients(self, trainer_id: int):
         with self._get_session() as session:
-            return session.query(User).join(
+            users = session.query(User).join(
                 TrainerClient, User.id == TrainerClient.client_id
             ).filter(
                 TrainerClient.trainer_id == trainer_id,
                 TrainerClient.is_active == True,
                 User.is_active == True
             ).all()
+            return [self._user_to_dict(u) for u in users]
 
     def get_trainer_clients_full(self, trainer_id: int):
         with self._get_session() as session:
-            return session.query(TrainerClient).filter(
+            clients = session.query(TrainerClient).filter(
                 TrainerClient.trainer_id == trainer_id,
                 TrainerClient.is_active == True
             ).all()
+            result = []
+            for client in clients:
+                result.append({
+                    'id': client.id,
+                    'trainer_id': client.trainer_id,
+                    'client_id': client.client_id,
+                    'created_at': client.created_at,
+                    'is_active': client.is_active
+                })
+            return result
 
     def get_client_trainers(self, client_id: int):
         with self._get_session() as session:
-            return session.query(User).join(
+            users = session.query(User).join(
                 TrainerClient, User.id == TrainerClient.trainer_id
             ).filter(
                 TrainerClient.client_id == client_id,
                 TrainerClient.is_active == True,
                 User.is_active == True
             ).all()
+            return [self._user_to_dict(u) for u in users]
 
     def add_client_to_trainer(self, trainer_id: int, client_id: int) -> bool:
         with self._get_session() as session:
@@ -173,15 +209,39 @@ class DatabaseService:
             m = Measurement(user_id=user_id, **data)
             session.add(m)
             session.flush()
-            return m
+            return {
+                'id': m.id,
+                'user_id': m.user_id,
+                'weight': m.weight,
+                'waist': m.waist,
+                'hips': m.hips,
+                'chest': m.chest,
+                'biceps': m.biceps,
+                'measured_at': m.measured_at,
+                'notes': m.notes
+            }
 
     def get_measurements(self, user_id: int, days: int = 30):
         cutoff = datetime.now() - timedelta(days=days)
         with self._get_session() as session:
-            return session.query(Measurement).filter(
+            measurements = session.query(Measurement).filter(
                 Measurement.user_id == user_id,
                 Measurement.measured_at >= cutoff
             ).order_by(Measurement.measured_at.asc()).all()
+            result = []
+            for m in measurements:
+                result.append({
+                    'id': m.id,
+                    'user_id': m.user_id,
+                    'weight': m.weight,
+                    'waist': m.waist,
+                    'hips': m.hips,
+                    'chest': m.chest,
+                    'biceps': m.biceps,
+                    'measured_at': m.measured_at,
+                    'notes': m.notes
+                })
+            return result
 
     def get_all_measurements(self, user_id: int, limit: int = None):
         with self._get_session() as session:
@@ -190,24 +250,64 @@ class DatabaseService:
             ).order_by(Measurement.measured_at.desc())
             if limit:
                 query = query.limit(limit)
-            return query.all()
+            measurements = query.all()
+            result = []
+            for m in measurements:
+                result.append({
+                    'id': m.id,
+                    'user_id': m.user_id,
+                    'weight': m.weight,
+                    'waist': m.waist,
+                    'hips': m.hips,
+                    'chest': m.chest,
+                    'biceps': m.biceps,
+                    'measured_at': m.measured_at,
+                    'notes': m.notes
+                })
+            return result
 
     def get_last_measurement(self, user_id: int):
         with self._get_session() as session:
-            return session.query(Measurement).filter(
+            m = session.query(Measurement).filter(
                 Measurement.user_id == user_id
             ).order_by(Measurement.measured_at.desc()).first()
+            if m:
+                return {
+                    'id': m.id,
+                    'user_id': m.user_id,
+                    'weight': m.weight,
+                    'waist': m.waist,
+                    'hips': m.hips,
+                    'chest': m.chest,
+                    'biceps': m.biceps,
+                    'measured_at': m.measured_at,
+                    'notes': m.notes
+                }
+            return None
 
     def get_first_measurement(self, user_id: int):
         with self._get_session() as session:
-            return session.query(Measurement).filter(
+            m = session.query(Measurement).filter(
                 Measurement.user_id == user_id
             ).order_by(Measurement.measured_at.asc()).first()
+            if m:
+                return {
+                    'id': m.id,
+                    'user_id': m.user_id,
+                    'weight': m.weight,
+                    'waist': m.waist,
+                    'hips': m.hips,
+                    'chest': m.chest,
+                    'biceps': m.biceps,
+                    'measured_at': m.measured_at,
+                    'notes': m.notes
+                }
+            return None
 
     def get_measurement_stats(self, user_id: int, days: int = 30):
         with self._get_session() as session:
             from sqlalchemy import func
-            return session.query(
+            stats = session.query(
                 func.min(Measurement.weight).label('min_weight'),
                 func.max(Measurement.weight).label('max_weight'),
                 func.avg(Measurement.weight).label('avg_weight'),
@@ -216,6 +316,14 @@ class DatabaseService:
                 Measurement.user_id == user_id,
                 Measurement.measured_at >= datetime.now() - timedelta(days=days)
             ).first()
+            if stats:
+                return {
+                    'min_weight': stats.min_weight,
+                    'max_weight': stats.max_weight,
+                    'avg_weight': stats.avg_weight,
+                    'total': stats.total
+                }
+            return None
 
     def create_reminder(self, trainer_id: int, day_of_week: int, time_str: str):
         from datetime import time
@@ -229,28 +337,63 @@ class DatabaseService:
             )
             session.add(reminder)
             session.flush()
-            return reminder
+            return {
+                'id': reminder.id,
+                'trainer_id': reminder.trainer_id,
+                'day_of_week': reminder.day_of_week,
+                'time': reminder.time.strftime("%H:%M"),
+                'is_active': reminder.is_active,
+                'created_at': reminder.created_at
+            }
 
     def get_trainer_reminders(self, trainer_id: int):
         with self._get_session() as session:
-            return session.query(Reminder).filter(
+            reminders = session.query(Reminder).filter(
                 Reminder.trainer_id == trainer_id,
                 Reminder.is_active == True
             ).all()
+            result = []
+            for r in reminders:
+                result.append({
+                    'id': r.id,
+                    'trainer_id': r.trainer_id,
+                    'day_of_week': r.day_of_week,
+                    'time': r.time.strftime("%H:%M"),
+                    'is_active': r.is_active,
+                    'created_at': r.created_at
+                })
+            return result
 
     def get_reminder(self, reminder_id: int):
         with self._get_session() as session:
-            return session.query(Reminder).filter(Reminder.id == reminder_id).first()
+            r = session.query(Reminder).filter(Reminder.id == reminder_id).first()
+            if r:
+                return {
+                    'id': r.id,
+                    'trainer_id': r.trainer_id,
+                    'day_of_week': r.day_of_week,
+                    'time': r.time.strftime("%H:%M"),
+                    'is_active': r.is_active,
+                    'created_at': r.created_at
+                }
+            return None
 
     def update_reminder(self, reminder_id: int, **kwargs):
         with self._get_session() as session:
-            reminder = session.query(Reminder).filter(Reminder.id == reminder_id).first()
-            if reminder:
+            r = session.query(Reminder).filter(Reminder.id == reminder_id).first()
+            if r:
                 for key, value in kwargs.items():
-                    if hasattr(reminder, key):
-                        setattr(reminder, key, value)
+                    if hasattr(r, key):
+                        setattr(r, key, value)
                 session.flush()
-                return reminder
+                return {
+                    'id': r.id,
+                    'trainer_id': r.trainer_id,
+                    'day_of_week': r.day_of_week,
+                    'time': r.time.strftime("%H:%M"),
+                    'is_active': r.is_active,
+                    'created_at': r.created_at
+                }
             return None
 
     def delete_reminder(self, reminder_id: int):
@@ -267,15 +410,33 @@ class DatabaseService:
             )
             session.add(log)
             session.flush()
-            return log
+            return {
+                'id': log.id,
+                'reminder_id': log.reminder_id,
+                'client_id': log.client_id,
+                'sent_at': log.sent_at,
+                'is_followup': log.is_followup,
+                'is_acknowledged': log.is_acknowledged
+            }
 
     def get_reminder_logs(self, client_id: int, days: int = 30):
         cutoff = datetime.now() - timedelta(days=days)
         with self._get_session() as session:
-            return session.query(ReminderLog).filter(
+            logs = session.query(ReminderLog).filter(
                 ReminderLog.client_id == client_id,
                 ReminderLog.sent_at >= cutoff
             ).all()
+            result = []
+            for log in logs:
+                result.append({
+                    'id': log.id,
+                    'reminder_id': log.reminder_id,
+                    'client_id': log.client_id,
+                    'sent_at': log.sent_at,
+                    'is_followup': log.is_followup,
+                    'is_acknowledged': log.is_acknowledged
+                })
+            return result
 
     def broadcast_message(self, message: str, sender_id: int):
         with self._get_session() as session:
@@ -292,16 +453,36 @@ class DatabaseService:
 
     def get_broadcasts(self, limit: int = 10):
         with self._get_session() as session:
-            return session.query(Broadcast).order_by(
+            broadcasts = session.query(Broadcast).order_by(
                 Broadcast.sent_at.desc()
             ).limit(limit).all()
+            result = []
+            for b in broadcasts:
+                result.append({
+                    'id': b.id,
+                    'message': b.message,
+                    'sent_by': b.sent_by,
+                    'sent_at': b.sent_at,
+                    'recipients_count': b.recipients_count
+                })
+            return result
 
     def get_user_subscription(self, user_id: int):
         with self._get_session() as session:
-            return session.query(Subscription).filter(
+            sub = session.query(Subscription).filter(
                 Subscription.user_id == user_id,
                 Subscription.is_active == True
             ).first()
+            if sub:
+                return {
+                    'id': sub.id,
+                    'user_id': sub.user_id,
+                    'plan': sub.plan,
+                    'expires_at': sub.expires_at,
+                    'created_at': sub.created_at,
+                    'is_active': sub.is_active
+                }
+            return None
 
     def set_trial_subscription(self, user_id: int, days: int = 7):
         with self._get_session() as session:
@@ -318,7 +499,14 @@ class DatabaseService:
             )
             session.add(sub)
             session.flush()
-            return sub
+            return {
+                'id': sub.id,
+                'user_id': sub.user_id,
+                'plan': sub.plan,
+                'expires_at': sub.expires_at,
+                'created_at': sub.created_at,
+                'is_active': sub.is_active
+            }
 
     def set_subscription(self, user_id: int, plan: str, days: int = 30):
         with self._get_session() as session:
@@ -335,7 +523,14 @@ class DatabaseService:
             )
             session.add(sub)
             session.flush()
-            return sub
+            return {
+                'id': sub.id,
+                'user_id': sub.user_id,
+                'plan': sub.plan,
+                'expires_at': sub.expires_at,
+                'created_at': sub.created_at,
+                'is_active': sub.is_active
+            }
 
     def cancel_subscription(self, user_id: int) -> bool:
         with self._get_session() as session:
@@ -362,10 +557,21 @@ class DatabaseService:
 
     def get_expired_subscriptions(self):
         with self._get_session() as session:
-            return session.query(Subscription).filter(
+            subs = session.query(Subscription).filter(
                 Subscription.is_active == True,
                 Subscription.expires_at <= datetime.now()
             ).all()
+            result = []
+            for sub in subs:
+                result.append({
+                    'id': sub.id,
+                    'user_id': sub.user_id,
+                    'plan': sub.plan,
+                    'expires_at': sub.expires_at,
+                    'created_at': sub.created_at,
+                    'is_active': sub.is_active
+                })
+            return result
 
     def get_daily_measurements_count(self) -> int:
         today = datetime.now().date()
