@@ -41,14 +41,14 @@ async def cmd_start(message: Message, state: FSMContext):
         
         if user:
             await state.clear()
-            if user.role == UserRole.TRAINER:
+            if user['role'] == UserRole.TRAINER.value:
                 await message.answer(
-                    f"👋 С возвращением, {user.full_name or 'Тренер'}!",
+                    f"👋 С возвращением, {user['full_name'] or 'Тренер'}!",
                     reply_markup=get_trainer_menu_keyboard()
                 )
             else:
                 await message.answer(
-                    f"👋 С возвращением, {user.full_name or 'Ученик'}!",
+                    f"👋 С возвращением, {user['full_name'] or 'Ученик'}!",
                     reply_markup=get_client_menu_keyboard()
                 )
             return
@@ -155,9 +155,9 @@ async def process_trainer_studio(message: Message, state: FSMContext):
 
         await message.answer(
             f"✅ Профиль тренера создан!\n\n"
-            f"👤 Имя: {user.full_name}\n"
-            f"📱 Телефон: {user.phone or 'Не указан'}\n"
-            f"🏢 Студия: {user.studio_name or 'Не указана'}",
+            f"👤 Имя: {user['full_name']}\n"
+            f"📱 Телефон: {user['phone'] or 'Не указан'}\n"
+            f"🏢 Студия: {user['studio_name'] or 'Не указана'}",
             reply_markup=get_trainer_menu_keyboard()
         )
         await state.clear()
@@ -285,9 +285,9 @@ async def _finish_client_registration(
 
         await message.answer(
             f"✅ Профиль ученика создан!\n\n"
-            f"👤 Имя: {user.full_name}\n"
-            f"🎂 Возраст: {user.age} лет\n"
-            f"📏 Рост: {user.height} см\n"
+            f"👤 Имя: {user['full_name']}\n"
+            f"🎂 Возраст: {user['age']} лет\n"
+            f"📏 Рост: {user['height']} см\n"
             f"🎯 Цель: {goal_ru}",
             reply_markup=get_client_menu_keyboard()
         )
