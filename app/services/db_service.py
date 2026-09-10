@@ -38,6 +38,8 @@ class DatabaseService:
         finally:
             session.close()
 
+    # ====================== USER ======================
+
     def _user_to_dict(self, user):
         if not user:
             return None
@@ -52,24 +54,32 @@ class DatabaseService:
             'age': user.age,
             'height': user.height,
             'goal': user.goal,
+            'timezone': user.timezone if hasattr(user, 'timezone') else 'Europe/Moscow',
             'created_at': user.created_at,
             'is_active': user.is_active
         }
 
     def get_user(self, user_id: int):
         with self._get_session() as session:
+            session.expire_all()
             user = session.query(User).filter(User.id == user_id).first()
             return self._user_to_dict(user)
 
     def get_user_by_telegram(self, telegram_id: int):
         with self._get_session() as session:
+            session.expire_all()
             user = session.query(User).filter(User.telegram_id == telegram_id).first()
+            if user:
+                logger.info(f"🔍 Found user: telegram_id={user.telegram_id}, role={user.role.value if user.role else None}")
+            else:
+                logger.warning(f"⚠️ User not found: telegram_id={telegram_id}")
             return self._user_to_dict(user)
 
     def get_user_by_username(self, username: str):
         if not username:
             return None
         with self._get_session() as session:
+            session.expire_all()
             user = session.query(User).filter(User.username == username).first()
             return self._user_to_dict(user)
 
@@ -113,11 +123,13 @@ class DatabaseService:
 
     def get_all_users(self):
         with self._get_session() as session:
+            session.expire_all()
             users = session.query(User).all()
             return [self._user_to_dict(u) for u in users]
 
     def get_users_by_role(self, role: UserRole):
         with self._get_session() as session:
+            session.expire_all()
             users = session.query(User).filter(
                 User.role == role,
                 User.is_active == True
@@ -128,11 +140,15 @@ class DatabaseService:
         if not user_ids:
             return []
         with self._get_session() as session:
+            session.expire_all()
             users = session.query(User).filter(User.id.in_(user_ids)).all()
             return [self._user_to_dict(u) for u in users]
 
+    # ====================== CLIENTS ======================
+
     def get_trainer_clients(self, trainer_id: int):
         with self._get_session() as session:
+            session.expire_all()
             users = session.query(User).join(
                 TrainerClient, User.id == TrainerClient.client_id
             ).filter(
@@ -144,6 +160,7 @@ class DatabaseService:
 
     def get_trainer_clients_full(self, trainer_id: int):
         with self._get_session() as session:
+            session.expire_all()
             clients = session.query(TrainerClient).filter(
                 TrainerClient.trainer_id == trainer_id,
                 TrainerClient.is_active == True
@@ -161,6 +178,7 @@ class DatabaseService:
 
     def get_client_trainers(self, client_id: int):
         with self._get_session() as session:
+            session.expire_all()
             users = session.query(User).join(
                 TrainerClient, User.id == TrainerClient.trainer_id
             ).filter(
@@ -204,6 +222,8 @@ class DatabaseService:
                 TrainerClient.is_active == True
             ).first() is not None
 
+    # ====================== MEASUREMENTS ======================
+
     def create_measurement(self, user_id: int, data: dict):
         with self._get_session() as session:
             m = Measurement(user_id=user_id, **data)
@@ -224,6 +244,7 @@ class DatabaseService:
     def get_measurements(self, user_id: int, days: int = 30):
         cutoff = datetime.now() - timedelta(days=days)
         with self._get_session() as session:
+            session.expire_all()
             measurements = session.query(Measurement).filter(
                 Measurement.user_id == user_id,
                 Measurement.measured_at >= cutoff
@@ -245,6 +266,7 @@ class DatabaseService:
 
     def get_all_measurements(self, user_id: int, limit: int = None):
         with self._get_session() as session:
+            session.expire_all()
             query = session.query(Measurement).filter(
                 Measurement.user_id == user_id
             ).order_by(Measurement.measured_at.desc())
@@ -268,6 +290,7 @@ class DatabaseService:
 
     def get_last_measurement(self, user_id: int):
         with self._get_session() as session:
+            session.expire_all()
             m = session.query(Measurement).filter(
                 Measurement.user_id == user_id
             ).order_by(Measurement.measured_at.desc()).first()
@@ -287,6 +310,7 @@ class DatabaseService:
 
     def get_first_measurement(self, user_id: int):
         with self._get_session() as session:
+            session.expire_all()
             m = session.query(Measurement).filter(
                 Measurement.user_id == user_id
             ).order_by(Measurement.measured_at.asc()).first()
@@ -325,6 +349,8 @@ class DatabaseService:
                 }
             return None
 
+    # ====================== REMINDERS ======================
+
     def create_reminder(self, trainer_id: int, day_of_week: int, time_str: str):
         from datetime import time
         t = datetime.strptime(time_str, "%H:%M").time()
@@ -348,6 +374,7 @@ class DatabaseService:
 
     def get_trainer_reminders(self, trainer_id: int):
         with self._get_session() as session:
+            session.expire_all()
             reminders = session.query(Reminder).filter(
                 Reminder.trainer_id == trainer_id,
                 Reminder.is_active == True
@@ -366,6 +393,7 @@ class DatabaseService:
 
     def get_reminder(self, reminder_id: int):
         with self._get_session() as session:
+            session.expire_all()
             r = session.query(Reminder).filter(Reminder.id == reminder_id).first()
             if r:
                 return {
@@ -422,6 +450,7 @@ class DatabaseService:
     def get_reminder_logs(self, client_id: int, days: int = 30):
         cutoff = datetime.now() - timedelta(days=days)
         with self._get_session() as session:
+            session.expire_all()
             logs = session.query(ReminderLog).filter(
                 ReminderLog.client_id == client_id,
                 ReminderLog.sent_at >= cutoff
@@ -438,6 +467,8 @@ class DatabaseService:
                 })
             return result
 
+    # ====================== BROADCAST ======================
+
     def broadcast_message(self, message: str, sender_id: int):
         with self._get_session() as session:
             b = Broadcast(message=message, sent_by=sender_id, recipients_count=0)
@@ -453,6 +484,7 @@ class DatabaseService:
 
     def get_broadcasts(self, limit: int = 10):
         with self._get_session() as session:
+            session.expire_all()
             broadcasts = session.query(Broadcast).order_by(
                 Broadcast.sent_at.desc()
             ).limit(limit).all()
@@ -467,8 +499,11 @@ class DatabaseService:
                 })
             return result
 
+    # ====================== SUBSCRIPTIONS ======================
+
     def get_user_subscription(self, user_id: int):
         with self._get_session() as session:
+            session.expire_all()
             sub = session.query(Subscription).filter(
                 Subscription.user_id == user_id,
                 Subscription.is_active == True
@@ -477,7 +512,7 @@ class DatabaseService:
                 return {
                     'id': sub.id,
                     'user_id': sub.user_id,
-                    'plan': sub.plan,
+                    'plan': sub.plan.value if hasattr(sub.plan, 'value') else sub.plan,
                     'expires_at': sub.expires_at,
                     'created_at': sub.created_at,
                     'is_active': sub.is_active
@@ -502,7 +537,7 @@ class DatabaseService:
             return {
                 'id': sub.id,
                 'user_id': sub.user_id,
-                'plan': sub.plan,
+                'plan': sub.plan.value if hasattr(sub.plan, 'value') else sub.plan,
                 'expires_at': sub.expires_at,
                 'created_at': sub.created_at,
                 'is_active': sub.is_active
@@ -526,7 +561,7 @@ class DatabaseService:
             return {
                 'id': sub.id,
                 'user_id': sub.user_id,
-                'plan': sub.plan,
+                'plan': sub.plan.value if hasattr(sub.plan, 'value') else sub.plan,
                 'expires_at': sub.expires_at,
                 'created_at': sub.created_at,
                 'is_active': sub.is_active
@@ -557,6 +592,7 @@ class DatabaseService:
 
     def get_expired_subscriptions(self):
         with self._get_session() as session:
+            session.expire_all()
             subs = session.query(Subscription).filter(
                 Subscription.is_active == True,
                 Subscription.expires_at <= datetime.now()
@@ -566,12 +602,14 @@ class DatabaseService:
                 result.append({
                     'id': sub.id,
                     'user_id': sub.user_id,
-                    'plan': sub.plan,
+                    'plan': sub.plan.value if hasattr(sub.plan, 'value') else sub.plan,
                     'expires_at': sub.expires_at,
                     'created_at': sub.created_at,
                     'is_active': sub.is_active
                 })
             return result
+
+    # ====================== STATISTICS ======================
 
     def get_daily_measurements_count(self) -> int:
         today = datetime.now().date()
