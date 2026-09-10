@@ -247,7 +247,7 @@ async def process_client_height(message: Message, state: FSMContext):
 
 
 # ============================================================
-#  ОБРАБОТКА ВЫБОРА ЦЕЛИ (БЕЗ StateFilter)
+#  ОБРАБОТКА ВЫБОРА ЦЕЛИ
 # ============================================================
 
 @router.callback_query(F.data.startswith("goal_"))
@@ -255,8 +255,12 @@ async def process_client_goal_callback(callback: CallbackQuery, state: FSMContex
     try:
         logger.info(f"📥 [process_client_goal_callback] data: {callback.data}")
         
-        goal = callback.data.split("_")[1]
-        logger.info(f"📥 Goal: {goal}")
+        # Правильный парсинг: убираем "goal_" из callback_data
+        # goal_weight_loss -> weight_loss
+        # goal_muscle_gain -> muscle_gain
+        # goal_maintain -> maintain
+        goal = callback.data[5:]  # отрезаем "goal_"
+        logger.info(f"📥 Goal after slice: '{goal}'")
         
         await _finish_client_registration(callback.message, state, goal, callback=callback)
     except Exception as e:
@@ -286,19 +290,17 @@ async def _finish_client_registration(
     callback: CallbackQuery = None
 ):
     try:
-        goal_map = {
-            "weight_loss": "weight_loss",
-            "muscle_gain": "muscle_gain",
-            "maintain": "maintain",
-            "похудение": "weight_loss",
-            "набор": "muscle_gain",
-            "поддержание": "maintain"
-        }
+        logger.info(f"🔍 [_finish_client_registration] goal received: '{goal}'")
+
+        # Простая проверка — если goal один из трёх, всё ок
+        valid_goals = ["weight_loss", "muscle_gain", "maintain"]
         
-        goal = goal_map.get(goal.lower()) if goal else None
-        if not goal:
+        if goal not in valid_goals:
+            logger.error(f"❌ Invalid goal: '{goal}'. Valid: {valid_goals}")
             await message.answer("❌ Неверная цель.", reply_markup=get_goal_inline_keyboard())
             return
+
+        logger.info(f"✅ Goal '{goal}' is valid")
 
         data = await state.get_data()
 
