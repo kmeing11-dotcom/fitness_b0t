@@ -34,6 +34,10 @@ class RegistrationStates(StatesGroup):
     client_goal = State()
 
 
+# ============================================================
+#  КОМАНДА /start
+# ============================================================
+
 @router.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
     try:
@@ -65,6 +69,10 @@ async def cmd_start(message: Message, state: FSMContext):
         await message.answer(f"❌ Ошибка: {str(e)[:200]}")
 
 
+# ============================================================
+#  ВЫБОР РОЛИ
+# ============================================================
+
 @router.message(StateFilter(RegistrationStates.choosing_role), F.text == "👨‍🏫 Тренер")
 async def register_trainer(message: Message, state: FSMContext):
     try:
@@ -92,6 +100,10 @@ async def register_client(message: Message, state: FSMContext):
         logger.error(f"Error in register_client: {e}")
         await message.answer("❌ Ошибка. Попробуйте ещё раз.")
 
+
+# ============================================================
+#  РЕГИСТРАЦИЯ ТРЕНЕРА
+# ============================================================
 
 @router.message(StateFilter(RegistrationStates.trainer_name))
 async def process_trainer_name(message: Message, state: FSMContext):
@@ -168,6 +180,10 @@ async def process_trainer_studio(message: Message, state: FSMContext):
         await state.clear()
 
 
+# ============================================================
+#  РЕГИСТРАЦИЯ УЧЕНИКА
+# ============================================================
+
 @router.message(StateFilter(RegistrationStates.client_name))
 async def process_client_name(message: Message, state: FSMContext):
     try:
@@ -230,13 +246,36 @@ async def process_client_height(message: Message, state: FSMContext):
         await message.answer("❌ Введите число.", reply_markup=get_cancel_keyboard())
 
 
-@router.callback_query(StateFilter(RegistrationStates.client_goal), F.data.startswith("goal_"))
+# ============================================================
+#  ОБРАБОТКА ВЫБОРА ЦЕЛИ (БЕЗ StateFilter)
+# ============================================================
+
+@router.callback_query(F.data.startswith("goal_"))
 async def process_client_goal_callback(callback: CallbackQuery, state: FSMContext):
     try:
+        logger.info(f"📥 [process_client_goal_callback] data: {callback.data}")
+        
         goal = callback.data.split("_")[1]
+        logger.info(f"📥 Goal: {goal}")
+        
         await _finish_client_registration(callback.message, state, goal, callback=callback)
     except Exception as e:
-        logger.error(f"Error in process_client_goal_callback: {e}")
+        logger.error(f"Error in process_client_goal_callback: {e}\n{traceback.format_exc()}")
+        await callback.answer("❌ Ошибка", show_alert=True)
+
+
+@router.callback_query(F.data == "cancel_registration")
+async def cancel_registration_callback(callback: CallbackQuery, state: FSMContext):
+    try:
+        await state.clear()
+        await callback.message.edit_text(
+            "❌ Регистрация отменена.\n"
+            "Если захотите зарегистрироваться позже, используйте /start.",
+            reply_markup=get_back_keyboard()
+        )
+        await callback.answer()
+    except Exception as e:
+        logger.error(f"Error in cancel_registration_callback: {e}")
         await callback.answer("❌ Ошибка", show_alert=True)
 
 
