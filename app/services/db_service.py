@@ -5,6 +5,7 @@ from app.models import User, Measurement, TrainerClient, Reminder, ReminderLog, 
 from datetime import datetime, timedelta
 from app.utils.logger import get_logger
 from contextlib import contextmanager
+import traceback
 
 logger = get_logger(__name__)
 
@@ -31,14 +32,14 @@ class DatabaseService:
         try:
             yield session
             session.commit()
+            logger.debug("✅ Session committed")
         except Exception as e:
             session.rollback()
-            logger.error(f"Database error: {e}")
+            logger.error(f"❌ Session rolled back: {e}")
+            logger.error(f"❌ Traceback: {traceback.format_exc()}")
             raise
         finally:
             session.close()
-
-    # ====================== USER ======================
 
     def _user_to_dict(self, user):
         if not user:
@@ -59,11 +60,7 @@ class DatabaseService:
             'is_active': user.is_active
         }
 
-    def get_user(self, user_id: int):
-        with self._get_session() as session:
-            session.expire_all()
-            user = session.query(User).filter(User.id == user_id).first()
-            return self._user_to_dict(user)
+    # ====================== USER ======================
 
     def get_user_by_telegram(self, telegram_id: int):
         with self._get_session() as session:
@@ -75,6 +72,12 @@ class DatabaseService:
                 logger.warning(f"⚠️ User not found: telegram_id={telegram_id}")
             return self._user_to_dict(user)
 
+    def get_user(self, user_id: int):
+        with self._get_session() as session:
+            session.expire_all()
+            user = session.query(User).filter(User.id == user_id).first()
+            return self._user_to_dict(user)
+
     def get_user_by_username(self, username: str):
         if not username:
             return None
@@ -84,31 +87,40 @@ class DatabaseService:
             return self._user_to_dict(user)
 
     def create_user(self, telegram_id, username, full_name, role, **kwargs):
-        with self._get_session() as session:
-            existing_user = session.query(User).filter(User.telegram_id == telegram_id).first()
-            
-            if existing_user:
-                existing_user.username = username
-                existing_user.full_name = full_name
-                existing_user.role = role
-                for key, value in kwargs.items():
-                    if hasattr(existing_user, key):
-                        setattr(existing_user, key, value)
+        """Создаёт или обновляет пользователя. Возвращает словарь."""
+        try:
+            with self._get_session() as session:
+                logger.info(f"💾 Creating/updating user: telegram_id={telegram_id}, role={role}, kwargs={kwargs}")
+
+                existing_user = session.query(User).filter(User.telegram_id == telegram_id).first()
+
+                if existing_user:
+                    existing_user.username = username
+                    existing_user.full_name = full_name
+                    existing_user.role = role
+                    for key, value in kwargs.items():
+                        if hasattr(existing_user, key):
+                            setattr(existing_user, key, value)
+                    session.flush()
+                    logger.info(f"✅ User updated: {existing_user.telegram_id}")
+                    return self._user_to_dict(existing_user)
+
+                user = User(
+                    telegram_id=telegram_id,
+                    username=username,
+                    full_name=full_name,
+                    role=role,
+                    **kwargs
+                )
+                session.add(user)
                 session.flush()
-                logger.info(f"✅ User updated: {existing_user.telegram_id}")
-                return self._user_to_dict(existing_user)
-            
-            user = User(
-                telegram_id=telegram_id,
-                username=username,
-                full_name=full_name,
-                role=role,
-                **kwargs
-            )
-            session.add(user)
-            session.flush()
-            logger.info(f"✅ User created: {user.telegram_id}")
-            return self._user_to_dict(user)
+                logger.info(f"✅ User created: {user.telegram_id}")
+                return self._user_to_dict(user)
+
+        except Exception as e:
+            logger.error(f"❌❌❌ FAILED to create user: {e}")
+            logger.error(f"❌❌❌ Traceback: {traceback.format_exc()}")
+            raise
 
     def update_user(self, user_id: int, **kwargs):
         with self._get_session() as session:
