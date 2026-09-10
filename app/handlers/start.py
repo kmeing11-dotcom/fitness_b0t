@@ -343,3 +343,27 @@ async def _finish_client_registration(
         await state.clear()
         if callback:
             await callback.answer("❌ Ошибка", show_alert=True)
+
+
+@router.message(Command("myid"))
+async def cmd_myid(message: Message):
+    try:
+        user = db.get_user_by_telegram(message.from_user.id)
+        
+        text = f"🆔 <b>Твой Telegram ID:</b> <code>{message.from_user.id}</code>\n"
+        text += f"👤 Username: @{message.from_user.username or 'не указан'}\n"
+        text += f"📛 Имя: {message.from_user.full_name}\n"
+        
+        if user:
+            text += f"\n✅ <b>Ты зарегистрирован в боте</b>\n"
+            text += f"🎯 Роль: {user['role']}\n"
+            text += f"📛 Имя в профиле: {user['full_name']}\n"
+        else:
+            text += f"\n❌ <b>Ты НЕ зарегистрирован в боте</b>\n"
+            text += f"Используй /start для регистрации"
+        
+        await message.answer(text, parse_mode=ParseMode.HTML)
+        
+    except Exception as e:
+        logger.error(f"Error in cmd_myid: {e}\n{traceback.format_exc()}")
+        await message.answer(f"🆔 Твой Telegram ID: <code>{message.from_user.id}</code>", parse_mode=ParseMode.HTML)
