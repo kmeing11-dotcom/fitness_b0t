@@ -1,3 +1,4 @@
+# app/services/chart_service.py
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -10,7 +11,6 @@ from io import BytesIO
 import logging
 
 from app.config import Config
-from app.models import Measurement
 
 logger = logging.getLogger(__name__)
 
@@ -31,13 +31,24 @@ class ChartService:
 
     def __init__(self):
         Config.ensure_temp_folder()
-        self.temp_folder = Path(Config.TEMP_FOLDER)
+        self.temp_folder = Path(Config.get_temp_folder())  # FIX: абсолютный путь
         self._setup_style()
         self._cleanup_old_charts()
 
     def _setup_style(self):
-        """Настраивает стиль графиков"""
-        plt.style.use('seaborn-v0_8-darkgrid')
+        """Настраивает стиль графиков."""
+        # FIX: безопасный выбор стиля — пробуем разные варианты
+        style_set = False
+        for style in ('seaborn-v0_8-darkgrid', 'seaborn-darkgrid', 'ggplot'):
+            try:
+                plt.style.use(style)
+                style_set = True
+                break
+            except Exception:
+                continue
+        if not style_set:
+            logger.warning("Не удалось установить стиль seaborn, используется default")
+
         plt.rcParams['font.size'] = 10
         plt.rcParams['figure.figsize'] = (12, 8)
         plt.rcParams['axes.labelsize'] = 11
@@ -46,7 +57,7 @@ class ChartService:
         plt.rcParams['figure.titlesize'] = 14
 
     def _cleanup_old_charts(self, days: int = 7):
-        """Удаляет старые графики"""
+        """Удаляет старые графики."""
         try:
             cutoff = datetime.now() - timedelta(days=days)
             for chart_file in self.temp_folder.glob("stats_*.png"):
@@ -58,24 +69,70 @@ class ChartService:
         except Exception as e:
             logger.warning(f"Chart cleanup error: {e}")
 
-    def _sort_measurements(self, measurements: List[Measurement]) -> List[Measurement]:
-        return sorted(measurements, key=lambda m: m.measured_at)
+    def _sort_measurements(self, measurements) -> list:
+        """FIX: поддержка и dict, и объекта."""
+        return sorted(
+            measurements,
+            key=lambda m: m['measured_at'] if isinstance(m, dict) else m.measured_at
+        )
 
-    def _get_measurement_arrays(self, measurements: List[Measurement]) -> dict:
+    def _get(self, obj, key):
+        """FIX: универсальный доступ к полю (dict или объект)."""
+        if isinstance(obj, dict):
+            return obj.get(key)
+        return getattr(obj, key, None)
+
+    def _get_measurement_arrays(self, measurements) -> dict:
+        """FIX: универсально работает и с dict, и с объектом."""
         sorted_measurements = self._sort_measurements(measurements)
-        dates = [m.measured_at for m in sorted_measurements]
+
+        dates = []
+        weights = []
+        waists = []
+        hips = []
+        chests = []
+        biceps = []
+
+        for m in sorted_measurements:
+            measured_at = self._get(m, 'measured_at')
+            if measured_at is None:
+                continue
+
+            w = self._get(m, 'weight')
+            if w is not None:
+                dates.append(measured_at)
+                weights.append(w)
+
+        # Отдельные массивы для объёмов
+        dates_body = []
+        for m in sorted_measurements:
+            measured_at = self._get(m, 'measured_at')
+            if measured_at is None:
+                continue
+
+            w = self._get(m, 'waist')
+            h = self._get(m, 'hips')
+            c = self._get(m, 'chest')
+            b = self._get(m, 'biceps')
+
+            if any(v is not None for v in (w, h, c, b)):
+                dates_body.append(measured_at)
+                waists.append(w)
+                hips.append(h)
+                chests.append(c)
+                biceps.append(b)
 
         return {
-            'dates': dates,
-            'weights': [m.weight for m in sorted_measurements if m.weight is not None],
-            'waists': [m.waist for m in sorted_measurements if m.waist is not None],
-            'hips': [m.hips for m in sorted_measurements if m.hips is not None],
-            'chests': [m.chest for m in sorted_measurements if m.chest is not None],
-            'biceps': [m.biceps for m in sorted_measurements if m.biceps is not None],
+            'dates': dates if dates else dates_body,
+            'weights': weights,
+            'waists': waists,
+            'hips': hips,
+            'chests': chests,
+            'biceps': biceps,
             'measurements': sorted_measurements
         }
 
-    async def generate_stats_chart(self, user_id: int, measurements: List[Measurement]) -> Optional[str]:
+    async def generate_stats_chart(self, user_id: int, measurements) -> Optional[str]:
         if not measurements:
             logger.warning(f"No measurements for user {user_id}")
             return None
@@ -88,23 +145,30 @@ class ChartService:
             ax1, ax2, ax3 = axes
 
             if data['weights']:
-                self._plot_weight_chart(ax1, dates, data['weights'])
+                weight_dates = [
+                    self._get(m, 'measured_at')
+                    for m in data['measurements']
+                    if self._get(m, 'weight') is not None
+                ]
+                self._plot_weight_chart(ax1, weight_dates, data['weights'])
             else:
-                ax1.text(0.5, 0.5, 'Нет данных о весе', ha='center', va='center', transform=ax1.transAxes, fontsize=14)
+                ax1.text(0.5, 0.5, 'Нет данных о весе', ha='center', va='center',
+                         transform=ax1.transAxes, fontsize=14)
                 ax1.set_title('Динамика веса', fontsize=14, fontweight='bold')
 
-            has_body_measurements = any([data['waists'], data['hips'], data['chests'], data['biceps']])
-            if has_body_measurements:
+            has_body = any([data['waists'], data['hips'], data['chests'], data['biceps']])
+            if has_body:
                 self._plot_body_measurements(ax2, dates, data)
             else:
-                ax2.text(0.5, 0.5, 'Нет данных об объёмах', ha='center', va='center', transform=ax2.transAxes, fontsize=14)
+                ax2.text(0.5, 0.5, 'Нет данных об объёмах', ha='center', va='center',
+                         transform=ax2.transAxes, fontsize=14)
                 ax2.set_title('Динамика объёмов', fontsize=14, fontweight='bold')
 
             if len(measurements) >= 2:
                 self._plot_changes(ax3, data['measurements'])
             else:
                 ax3.text(0.5, 0.5, 'Недостаточно данных для анализа изменений\n(нужно минимум 2 замера)',
-                        ha='center', va='center', transform=ax3.transAxes, fontsize=12)
+                         ha='center', va='center', transform=ax3.transAxes, fontsize=12)
                 ax3.set_title('Изменения за период', fontsize=14, fontweight='bold')
 
             for ax in axes:
@@ -130,7 +194,8 @@ class ChartService:
             return None
 
     def _plot_weight_chart(self, ax, dates, weights):
-        ax.plot(dates, weights, 'o-', color=self.COLORS['weight'], linewidth=2.5, markersize=8, label='Вес (кг)')
+        ax.plot(dates, weights, 'o-', color=self.COLORS['weight'],
+                linewidth=2.5, markersize=8, label='Вес (кг)')
         ax.set_title('Динамика веса', fontsize=14, fontweight='bold')
         ax.set_ylabel('Вес (кг)')
         ax.legend(loc='upper right')
@@ -140,7 +205,8 @@ class ChartService:
             z = np.polyfit(x, weights, 1)
             p = np.poly1d(z)
             trend = p(x)
-            ax.plot(dates, trend, '--', color=self.COLORS['trend'], alpha=0.7, label='Тренд', linewidth=2)
+            ax.plot(dates, trend, '--', color=self.COLORS['trend'],
+                    alpha=0.7, label='Тренд', linewidth=2)
             ax.legend(loc='upper right')
 
     def _plot_body_measurements(self, ax, dates, data):
@@ -151,9 +217,29 @@ class ChartService:
             (data['biceps'], 'Бицепс (см)', self.COLORS['biceps']),
         ]
 
+        # FIX: выравниваем по датам — только там где значение не None
+        body_dates = []
+        for m in data['measurements']:
+            measured_at = self._get(m, 'measured_at')
+            if measured_at is None:
+                continue
+            if any(self._get(m, k) is not None
+                   for k in ('waist', 'hips', 'chest', 'biceps')):
+                body_dates.append(measured_at)
+
         for values, label, color in measurements_to_plot:
-            if values:
-                ax.plot(dates, values, 'o-', color=color, linewidth=2, markersize=6, label=label)
+            if not values:
+                continue
+            # фильтруем None и синхронизируем с датами
+            clean_dates = []
+            clean_values = []
+            for d, v in zip(body_dates, values):
+                if v is not None:
+                    clean_dates.append(d)
+                    clean_values.append(v)
+            if clean_values:
+                ax.plot(clean_dates, clean_values, 'o-', color=color,
+                        linewidth=2, markersize=6, label=label)
 
         ax.set_title('Динамика объёмов', fontsize=14, fontweight='bold')
         ax.set_ylabel('Объём (см)')
@@ -168,29 +254,32 @@ class ChartService:
         colors = []
 
         measurement_fields = [
-            ('weight', 'Вес (кг)', 1),
-            ('waist', 'Талия (см)', 1),
-            ('hips', 'Бёдра (см)', 1),
-            ('chest', 'Грудь (см)', 1),
-            ('biceps', 'Бицепс (см)', 1),
+            ('weight', 'Вес (кг)'),
+            ('waist', 'Талия (см)'),
+            ('hips', 'Бёдра (см)'),
+            ('chest', 'Грудь (см)'),
+            ('biceps', 'Бицепс (см)'),
         ]
 
-        for field, label, _ in measurement_fields:
-            first_val = getattr(first, field)
-            last_val = getattr(last, field)
+        for field, label in measurement_fields:
+            first_val = self._get(first, field)
+            last_val = self._get(last, field)
 
             if first_val is not None and last_val is not None:
                 change = last_val - first_val
                 changes.append(change)
                 labels.append(label)
 
-                if field in ['weight', 'waist']:
-                    colors.append(self.COLORS['improvement'] if change < 0 else self.COLORS['decline'])
+                if field in ('weight', 'waist'):
+                    colors.append(self.COLORS['improvement'] if change < 0
+                                  else self.COLORS['decline'])
                 else:
-                    colors.append(self.COLORS['improvement'] if change > 0 else self.COLORS['decline'])
+                    colors.append(self.COLORS['improvement'] if change > 0
+                                  else self.COLORS['decline'])
 
         if changes:
-            bars = ax.bar(labels, changes, color=colors, alpha=0.8, edgecolor='black', linewidth=0.5)
+            bars = ax.bar(labels, changes, color=colors, alpha=0.8,
+                          edgecolor='black', linewidth=0.5)
             ax.axhline(y=0, color='black', linestyle='-', linewidth=1)
             ax.set_title('Изменения за период', fontsize=14, fontweight='bold')
             ax.set_ylabel('Изменение')
@@ -210,7 +299,7 @@ class ChartService:
             max_change = max(abs(c) for c in changes) if changes else 1
             ax.set_ylim(-max_change * 1.3, max_change * 1.3)
 
-    async def generate_stats_chart_bytes(self, user_id: int, measurements: List[Measurement]) -> Optional[bytes]:
+    async def generate_stats_chart_bytes(self, user_id: int, measurements) -> Optional[bytes]:
         if not measurements:
             return None
 
@@ -222,16 +311,23 @@ class ChartService:
             ax1, ax2 = axes
 
             if data['weights']:
-                self._plot_weight_chart(ax1, dates, data['weights'])
+                weight_dates = [
+                    self._get(m, 'measured_at')
+                    for m in data['measurements']
+                    if self._get(m, 'weight') is not None
+                ]
+                self._plot_weight_chart(ax1, weight_dates, data['weights'])
             else:
-                ax1.text(0.5, 0.5, 'Нет данных', ha='center', va='center', transform=ax1.transAxes)
+                ax1.text(0.5, 0.5, 'Нет данных', ha='center', va='center',
+                         transform=ax1.transAxes)
                 ax1.set_title('Динамика веса', fontsize=14, fontweight='bold')
 
             has_body = any([data['waists'], data['hips'], data['chests'], data['biceps']])
             if has_body:
                 self._plot_body_measurements(ax2, dates, data)
             else:
-                ax2.text(0.5, 0.5, 'Нет данных', ha='center', va='center', transform=ax2.transAxes)
+                ax2.text(0.5, 0.5, 'Нет данных', ha='center', va='center',
+                         transform=ax2.transAxes)
                 ax2.set_title('Динамика объёмов', fontsize=14, fontweight='bold')
 
             for ax in axes:
@@ -248,7 +344,6 @@ class ChartService:
             plt.savefig(buf, format='png', dpi=150, bbox_inches='tight', facecolor='white')
             plt.close()
             buf.seek(0)
-
             return buf.read()
 
         except Exception as e:
@@ -256,19 +351,27 @@ class ChartService:
             plt.close()
             return None
 
-    async def generate_report_chart(self, user_id: int, measurements: List[Measurement]) -> Optional[str]:
+    async def generate_report_chart(self, user_id: int, measurements) -> Optional[str]:
         if not measurements:
             return None
 
         try:
             data = self._get_measurement_arrays(measurements)
-            dates = data['dates']
-            weights = data['weights']
+
+            weight_dates = []
+            weights = []
+            for m in data['measurements']:
+                w = self._get(m, 'weight')
+                d = self._get(m, 'measured_at')
+                if w is not None and d is not None:
+                    weight_dates.append(d)
+                    weights.append(w)
 
             fig, ax = plt.subplots(figsize=(10, 6))
 
             if weights:
-                ax.plot(dates, weights, 'o-', color=self.COLORS['weight'], linewidth=2.5, markersize=8)
+                ax.plot(weight_dates, weights, 'o-', color=self.COLORS['weight'],
+                        linewidth=2.5, markersize=8)
                 ax.set_title('Динамика веса', fontsize=14, fontweight='bold')
                 ax.set_xlabel('Дата')
                 ax.set_ylabel('Вес (кг)')
@@ -279,23 +382,24 @@ class ChartService:
                     z = np.polyfit(x, weights, 1)
                     p = np.poly1d(z)
                     trend = p(x)
-                    ax.plot(dates, trend, '--', color=self.COLORS['trend'], alpha=0.7, label='Тренд')
+                    ax.plot(weight_dates, trend, '--', color=self.COLORS['trend'],
+                            alpha=0.7, label='Тренд')
                     ax.legend()
 
                 ax.xaxis.set_major_formatter(mdates.DateFormatter('%d.%m'))
-                if len(dates) > 1:
-                    interval = max(1, len(dates) // 5)
+                if len(weight_dates) > 1:
+                    interval = max(1, len(weight_dates) // 5)
                     ax.xaxis.set_major_locator(mdates.DayLocator(interval=interval))
                 plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
             else:
-                ax.text(0.5, 0.5, 'Нет данных о весе', ha='center', va='center', transform=ax.transAxes, fontsize=14)
+                ax.text(0.5, 0.5, 'Нет данных о весе', ha='center', va='center',
+                        transform=ax.transAxes, fontsize=14)
 
             plt.tight_layout()
 
             filepath = self.temp_folder / f"report_chart_{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
             plt.savefig(filepath, dpi=120, bbox_inches='tight', facecolor='white')
             plt.close()
-
             return str(filepath)
 
         except Exception as e:
@@ -303,31 +407,40 @@ class ChartService:
             plt.close()
             return None
 
-    async def generate_simple_chart(self, measurements: List[Measurement]) -> Optional[bytes]:
+    async def generate_simple_chart(self, measurements) -> Optional[bytes]:
         if not measurements:
             return None
 
         try:
             data = self._get_measurement_arrays(measurements)
-            dates = data['dates']
-            weights = data['weights']
+
+            weight_dates = []
+            weights = []
+            for m in data['measurements']:
+                w = self._get(m, 'weight')
+                d = self._get(m, 'measured_at')
+                if w is not None and d is not None:
+                    weight_dates.append(d)
+                    weights.append(w)
 
             fig, ax = plt.subplots(figsize=(8, 5))
 
             if weights:
-                ax.plot(dates, weights, 'o-', color=self.COLORS['weight'], linewidth=2.5, markersize=8)
+                ax.plot(weight_dates, weights, 'o-', color=self.COLORS['weight'],
+                        linewidth=2.5, markersize=8)
                 ax.set_title('Прогресс веса', fontsize=14, fontweight='bold')
                 ax.set_xlabel('Дата')
                 ax.set_ylabel('Вес (кг)')
                 ax.grid(True, alpha=0.3)
 
                 ax.xaxis.set_major_formatter(mdates.DateFormatter('%d.%m'))
-                if len(dates) > 1:
-                    interval = max(1, len(dates) // 5)
+                if len(weight_dates) > 1:
+                    interval = max(1, len(weight_dates) // 5)
                     ax.xaxis.set_major_locator(mdates.DayLocator(interval=interval))
                 plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
             else:
-                ax.text(0.5, 0.5, 'Нет данных', ha='center', va='center', transform=ax.transAxes, fontsize=14)
+                ax.text(0.5, 0.5, 'Нет данных', ha='center', va='center',
+                        transform=ax.transAxes, fontsize=14)
 
             plt.tight_layout()
 
@@ -335,7 +448,6 @@ class ChartService:
             plt.savefig(buf, format='png', dpi=120, bbox_inches='tight', facecolor='white')
             plt.close()
             buf.seek(0)
-
             return buf.read()
 
         except Exception as e:
