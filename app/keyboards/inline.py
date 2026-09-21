@@ -294,7 +294,7 @@ def get_admin_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="💎 Подписки", callback_data="admin_subscriptions")
         ],
         [
-            InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_menu")
+            InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_admin")
         ]
     ]
     return InlineKeyboardMarkup(inline_keyboard=kb)
