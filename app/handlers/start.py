@@ -1,9 +1,13 @@
+# app/handlers/start.py
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.enums import ParseMode
+import re
+import traceback
+
 from app.models import UserRole
 from app.services.db_service import DatabaseService
 from app.keyboards.inline import (
@@ -11,12 +15,10 @@ from app.keyboards.inline import (
     get_trainer_menu_keyboard,
     get_client_menu_keyboard,
     get_cancel_keyboard,
-    get_back_keyboard,
-    get_goal_inline_keyboard
+    get_goal_inline_keyboard,
+    get_back_inline_keyboard
 )
 from app.utils.logger import get_logger
-import re
-import traceback
 
 logger = get_logger(__name__)
 router = Router()
@@ -35,14 +37,14 @@ class RegistrationStates(StatesGroup):
 
 
 # ============================================================
-#  КОМАНДА /start
+#  /start
 # ============================================================
 
 @router.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
     try:
         user = db.get_user_by_telegram(message.from_user.id)
-        
+
         if user:
             await state.clear()
             if user['role'] == UserRole.TRAINER.value:
@@ -176,7 +178,10 @@ async def process_trainer_studio(message: Message, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Error in process_trainer_studio: {e}\n{traceback.format_exc()}")
-        await message.answer(f"❌ Ошибка: {str(e)[:200]}", reply_markup=get_cancel_keyboard())
+        await message.answer(
+            f"❌ Ошибка: {str(e)[:200]}",
+            reply_markup=get_cancel_keyboard()
+        )
         await state.clear()
 
 
@@ -247,22 +252,28 @@ async def process_client_height(message: Message, state: FSMContext):
 
 
 # ============================================================
-#  ОБРАБОТКА ВЫБОРА ЦЕЛИ
+#  ВЫБОР ЦЕЛИ
 # ============================================================
 
 @router.callback_query(F.data.startswith("goal_"))
 async def process_client_goal_callback(callback: CallbackQuery, state: FSMContext):
     try:
-        logger.info(f"📥 [process_client_goal_callback] data: {callback.data}")
-        
-        # Правильный парсинг: убираем "goal_" из callback_data
-        # goal_weight_loss -> weight_loss
-        # goal_muscle_gain -> muscle_gain
-        # goal_maintain -> maintain
-        goal = callback.data[5:]  # отрезаем "goal_"
-        logger.info(f"📥 Goal after slice: '{goal}'")
-        
-        await _finish_client_registration(callback.message, state, goal, callback=callback)
+        logger.info(f"📥 [goal_] data: {callback.data}")
+
+        # goal_weight_loss → weight_loss
+        goal = callback.data.replace("goal_", "", 1)
+        logger.info(f"📥 Goal: '{goal}'")
+
+        # FIX КРИТИЧНО: передаём callback.from_user.id явно,
+        # потому что callback.message.from_user — это БОТ.
+        await _finish_client_registration(
+            callback=callback,
+            state=state,
+            goal=goal,
+            user_id=callback.from_user.id,
+            username=callback.from_user.username or f"user_{callback.from_user.id}"
+        )
+
     except Exception as e:
         logger.error(f"Error in process_client_goal_callback: {e}\n{traceback.format_exc()}")
         await callback.answer("❌ Ошибка", show_alert=True)
@@ -275,7 +286,7 @@ async def cancel_registration_callback(callback: CallbackQuery, state: FSMContex
         await callback.message.edit_text(
             "❌ Регистрация отменена.\n"
             "Если захотите зарегистрироваться позже, используйте /start.",
-            reply_markup=get_back_keyboard()
+            reply_markup=get_back_inline_keyboard("back_to_menu")
         )
         await callback.answer()
     except Exception as e:
@@ -284,29 +295,34 @@ async def cancel_registration_callback(callback: CallbackQuery, state: FSMContex
 
 
 async def _finish_client_registration(
-    message: Message,
+    callback: CallbackQuery,
     state: FSMContext,
     goal: str,
-    callback: CallbackQuery = None
+    user_id: int,
+    username: str
 ):
+    """
+    FIX КРИТИЧНО: раньше использовался message.from_user.id (= БОТ).
+    Теперь user_id передаётся явно из callback.from_user.id.
+    """
     try:
-        logger.info(f"🔍 [_finish_client_registration] goal received: '{goal}'")
+        logger.info(f"🔍 [_finish_client_registration] goal='{goal}', user_id={user_id}")
 
-        # Простая проверка — если goal один из трёх, всё ок
         valid_goals = ["weight_loss", "muscle_gain", "maintain"]
-        
         if goal not in valid_goals:
             logger.error(f"❌ Invalid goal: '{goal}'. Valid: {valid_goals}")
-            await message.answer("❌ Неверная цель.", reply_markup=get_goal_inline_keyboard())
+            await callback.message.edit_text(
+                "❌ Неверная цель. Попробуйте ещё раз.",
+                reply_markup=get_goal_inline_keyboard()
+            )
             return
-
-        logger.info(f"✅ Goal '{goal}' is valid")
 
         data = await state.get_data()
 
+        # FIX: используем переданный user_id, а не message.from_user.id
         user = db.create_user(
-            telegram_id=message.from_user.id,
-            username=message.from_user.username or f"user_{message.from_user.id}",
+            telegram_id=user_id,
+            username=username,
             full_name=data.get('full_name', 'Ученик'),
             role=UserRole.CLIENT,
             age=data.get('age', 0),
@@ -315,7 +331,8 @@ async def _finish_client_registration(
         )
 
         if not user:
-            await message.answer("❌ Не удалось создать профиль.")
+            await callback.message.edit_text("❌ Не удалось создать профиль.")
+            await callback.answer()
             return
 
         goal_ru = {
@@ -324,36 +341,47 @@ async def _finish_client_registration(
             "maintain": "Поддержание"
         }.get(goal, goal)
 
-        await message.answer(
+        # Редактируем сообщение с кнопками → убираем кнопки
+        await callback.message.edit_text(
             f"✅ Профиль ученика создан!\n\n"
             f"👤 Имя: {user['full_name']}\n"
             f"🎂 Возраст: {user['age']} лет\n"
             f"📏 Рост: {user['height']} см\n"
-            f"🎯 Цель: {goal_ru}",
+            f"🎯 Цель: {goal_ru}"
+        )
+
+        # Отправляем новое сообщение с Reply-меню
+        await callback.message.answer(
+            "👇 Используйте меню ниже:",
             reply_markup=get_client_menu_keyboard()
         )
-        await state.clear()
 
-        if callback:
-            await callback.answer()
+        await state.clear()
+        await callback.answer("✅ Регистрация завершена!")
 
     except Exception as e:
         logger.error(f"Error in _finish_client_registration: {e}\n{traceback.format_exc()}")
-        await message.answer(f"❌ Ошибка: {str(e)[:200]}", reply_markup=get_cancel_keyboard())
+        await callback.message.answer(
+            f"❌ Ошибка: {str(e)[:200]}",
+            reply_markup=get_cancel_keyboard()
+        )
         await state.clear()
-        if callback:
-            await callback.answer("❌ Ошибка", show_alert=True)
+        await callback.answer("❌ Ошибка", show_alert=True)
 
+
+# ============================================================
+#  /myid
+# ============================================================
 
 @router.message(Command("myid"))
 async def cmd_myid(message: Message):
     try:
         user = db.get_user_by_telegram(message.from_user.id)
-        
+
         text = f"🆔 <b>Твой Telegram ID:</b> <code>{message.from_user.id}</code>\n"
         text += f"👤 Username: @{message.from_user.username or 'не указан'}\n"
         text += f"📛 Имя: {message.from_user.full_name}\n"
-        
+
         if user:
             text += f"\n✅ <b>Ты зарегистрирован в боте</b>\n"
             text += f"🎯 Роль: {user['role']}\n"
@@ -361,9 +389,12 @@ async def cmd_myid(message: Message):
         else:
             text += f"\n❌ <b>Ты НЕ зарегистрирован в боте</b>\n"
             text += f"Используй /start для регистрации"
-        
+
         await message.answer(text, parse_mode=ParseMode.HTML)
-        
+
     except Exception as e:
         logger.error(f"Error in cmd_myid: {e}\n{traceback.format_exc()}")
-        await message.answer(f"🆔 Твой Telegram ID: <code>{message.from_user.id}</code>", parse_mode=ParseMode.HTML)
+        await message.answer(
+            f"🆔 Твой Telegram ID: <code>{message.from_user.id}</code>",
+            parse_mode=ParseMode.HTML
+        )
