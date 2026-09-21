@@ -1,13 +1,18 @@
+# app/db.py
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, scoped_session
 from app.config import Config
 from app.models import Base
-import logging
+from app.utils.logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class Database:
+    """
+    Единый источник engine и session для всего проекта.
+    DatabaseService и ReminderService используют ЭТОТ engine.
+    """
     _engine = None
     _session_factory = None
     _scoped_session = None
@@ -27,9 +32,9 @@ class Database:
                     pool_pre_ping=True,
                     pool_recycle=3600,
                 )
-                logger.info("Database engine created successfully")
+                logger.info("✅ Database engine created")
             except Exception as e:
-                logger.error(f"Failed to create database engine: {e}")
+                logger.error(f"❌ Failed to create database engine: {e}")
                 raise
         return cls._engine
 
@@ -46,33 +51,43 @@ class Database:
 
     @classmethod
     def get_session(cls):
+        """scoped_session для ORM-операций (reminder_service)."""
         if cls._scoped_session is None:
             cls._scoped_session = scoped_session(cls.get_session_factory())
         return cls._scoped_session
 
     @classmethod
+    def get_raw_session(cls):
+        """Обычная session (не scoped) — для db_service."""
+        return cls.get_session_factory()()
+
+    @classmethod
     def init_db(cls):
         try:
             Base.metadata.create_all(cls.get_engine())
-            logger.info("Database tables created/verified successfully")
+            logger.info("✅ Database tables created/verified")
         except Exception as e:
-            logger.error(f"Failed to create database tables: {e}")
+            logger.error(f"❌ Failed to create tables: {e}")
             raise
 
     @classmethod
     def drop_db(cls):
         if Config.ENV == "development":
             Base.metadata.drop_all(cls.get_engine())
-            logger.warning("All database tables dropped!")
+            logger.warning("⚠️ All database tables dropped!")
         else:
-            logger.error("Cannot drop tables in production!")
+            logger.error("❌ Cannot drop tables in production!")
 
     @classmethod
     def close_session(cls):
         if cls._scoped_session is not None:
             cls._scoped_session.remove()
-            logger.debug("Database session closed")
+            logger.debug("Database scoped session closed")
 
+
+# ============================================================
+#  МОДУЛЬНЫЕ ОБЁРТКИ (для обратной совместимости)
+# ============================================================
 
 def get_engine():
     return Database.get_engine()
@@ -86,5 +101,7 @@ def init_db():
     Database.init_db()
 
 
+# FIX: Session и engine оставлены для обратной совместимости —
+# reminder_service.py использует `from app.db import Session`
 Session = Database.get_session()
 engine = Database.get_engine()
