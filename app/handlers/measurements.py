@@ -1,16 +1,21 @@
+# app/handlers/measurements.py
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, BufferedInputFile
+from aiogram.types import Message, BufferedInputFile
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.enums import ParseMode
 from datetime import datetime
+import traceback
+
 from app.services.db_service import DatabaseService
 from app.services.chart_service import ChartService
 from app.models import UserRole
-from app.keyboards.inline import get_cancel_keyboard, get_back_keyboard
+from app.keyboards.inline import (
+    get_cancel_keyboard,
+    get_back_inline_keyboard
+)
 from app.utils.logger import get_logger
-import traceback
 
 logger = get_logger(__name__)
 router = Router()
@@ -27,7 +32,7 @@ class MeasurementStates(StatesGroup):
 
 
 # ============================================================
-#  КОМАНДА /set_measurements
+#  /set_measurements
 # ============================================================
 
 @router.message(Command("set_measurements"))
@@ -41,21 +46,21 @@ async def start_measurements(message: Message, state: FSMContext):
             )
             return
 
-        if user.role != UserRole.CLIENT:
+        if user['role'] != UserRole.CLIENT.value:
             await message.answer("❌ Эта команда доступна только ученикам.")
             return
 
         await state.clear()
 
-        last_measurement = db.get_last_measurement(user.id)
+        last_measurement = db.get_last_measurement(user['id'])
         last_text = ""
         if last_measurement:
             last_text = (
-                f"\n📋 <i>Последний замер: {last_measurement.measured_at.strftime('%d.%m.%Y')}</i>\n"
-                f"⚖️ Вес: {last_measurement.weight or '—'} кг\n"
+                f"\n📋 <i>Последний замер: "
+                f"{last_measurement['measured_at'].strftime('%d.%m.%Y')}</i>\n"
+                f"⚖️ Вес: {last_measurement['weight'] or '—'} кг\n"
             )
 
-        # Убрали "пропустить" из текста
         await message.answer(
             f"📝 <b>Введите замеры</b>\n\n"
             f"На каждом шаге введите значение.\n"
@@ -67,12 +72,12 @@ async def start_measurements(message: Message, state: FSMContext):
         await state.set_state(MeasurementStates.weight)
 
     except Exception as e:
-        logger.error(f"Error in start_measurements: {e}")
+        logger.error(f"Error in start_measurements: {e}\n{traceback.format_exc()}")
         await message.answer("❌ Ошибка при начале ввода замеров.")
 
 
 # ============================================================
-#  ОБРАБОТКА ЗАМЕРОВ (без "пропустить")
+#  ШАГ 1 — ВЕС
 # ============================================================
 
 @router.message(StateFilter(MeasurementStates.weight))
@@ -118,6 +123,10 @@ async def process_weight(message: Message, state: FSMContext):
         await message.answer("❌ Ошибка при обработке веса.")
 
 
+# ============================================================
+#  ШАГ 2 — ТАЛИЯ
+# ============================================================
+
 @router.message(StateFilter(MeasurementStates.waist))
 async def process_waist(message: Message, state: FSMContext):
     try:
@@ -160,6 +169,10 @@ async def process_waist(message: Message, state: FSMContext):
         logger.error(f"Error in process_waist: {e}")
         await message.answer("❌ Ошибка при обработке талии.")
 
+
+# ============================================================
+#  ШАГ 3 — БЁДРА
+# ============================================================
 
 @router.message(StateFilter(MeasurementStates.hips))
 async def process_hips(message: Message, state: FSMContext):
@@ -204,6 +217,10 @@ async def process_hips(message: Message, state: FSMContext):
         await message.answer("❌ Ошибка при обработке бедер.")
 
 
+# ============================================================
+#  ШАГ 4 — ГРУДЬ
+# ============================================================
+
 @router.message(StateFilter(MeasurementStates.chest))
 async def process_chest(message: Message, state: FSMContext):
     try:
@@ -246,6 +263,10 @@ async def process_chest(message: Message, state: FSMContext):
         logger.error(f"Error in process_chest: {e}")
         await message.answer("❌ Ошибка при обработке груди.")
 
+
+# ============================================================
+#  ШАГ 5 — БИЦЕПС + СОХРАНЕНИЕ
+# ============================================================
 
 @router.message(StateFilter(MeasurementStates.biceps))
 async def process_biceps(message: Message, state: FSMContext):
@@ -305,30 +326,40 @@ async def process_biceps(message: Message, state: FSMContext):
         if not measurement_data:
             await message.answer(
                 "❌ Вы должны ввести хотя бы один замер.",
-                reply_markup=get_back_keyboard()
+                reply_markup=get_back_inline_keyboard("back_to_menu")
             )
             await state.clear()
             return
 
         user = db.get_user_by_telegram(message.from_user.id)
-        db.create_measurement(user.id, measurement_data)
-        logger.info(f"✅ Measurements saved for user {user.id}: {len(measurement_data)} fields")
+        if not user:
+            await message.answer("❌ Пользователь не найден.")
+            await state.clear()
+            return
+
+        db.create_measurement(user['id'], measurement_data)
+        logger.info(
+            f"✅ Measurements saved for user {user['id']}: "
+            f"{len(measurement_data)} fields"
+        )
 
         response = "✅ <b>Замеры сохранены!</b>\n\n"
         for field, value in measurement_data.items():
-            response += f"{field_emojis.get(field, '📊')} {field_labels.get(field, field)}: <b>{value:.1f}</b>\n"
+            response += (
+                f"{field_emojis.get(field, '📊')} "
+                f"{field_labels.get(field, field)}: <b>{value:.1f}</b>\n"
+            )
 
         response += "\n📊 Для просмотра прогресса используйте /my_progress"
 
         await message.answer(
             response,
-            parse_mode=ParseMode.HTML,
-            reply_markup=get_back_keyboard()
+            parse_mode=ParseMode.HTML
         )
         await state.clear()
 
     except Exception as e:
-        logger.error(f"Error in process_biceps: {e}")
+        logger.error(f"Error in process_biceps: {e}\n{traceback.format_exc()}")
         await message.answer("❌ Ошибка при сохранении замеров.")
         await state.clear()
 
@@ -337,7 +368,7 @@ async def cancel_measurements(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(
         "❌ Ввод замеров отменён.",
-        reply_markup=get_back_keyboard()
+        reply_markup=get_back_inline_keyboard("back_to_menu")
     )
 
 
@@ -353,39 +384,44 @@ async def my_progress(message: Message):
             await message.answer("❌ Вы не зарегистрированы. Используйте /start.")
             return
 
-        if user.role != UserRole.CLIENT:
+        if user['role'] != UserRole.CLIENT.value:
             await message.answer("❌ Эта команда доступна только ученикам.")
             return
 
-        measurements = db.get_measurements(user.id, days=30)
+        measurements = db.get_measurements(user['id'], days=30)
 
         if not measurements:
             await message.answer(
                 "📊 У вас пока нет замеров.\n\n"
                 "Внесите первый замер: /set_measurements",
-                reply_markup=get_back_keyboard()
+                reply_markup=get_back_inline_keyboard("back_to_menu")
             )
             return
 
-        sorted_measurements = sorted(measurements, key=lambda m: m.measured_at)
+        sorted_measurements = sorted(
+            measurements, key=lambda m: m['measured_at']
+        )
         last = sorted_measurements[-1]
         first = sorted_measurements[0]
 
         response = f"📊 <b>Ваш прогресс</b>\n\n"
-        response += f"📅 Период: {first.measured_at.strftime('%d.%m.%Y')} — {last.measured_at.strftime('%d.%m.%Y')}\n"
+        response += (
+            f"📅 Период: {first['measured_at'].strftime('%d.%m.%Y')} — "
+            f"{last['measured_at'].strftime('%d.%m.%Y')}\n"
+        )
         response += f"📊 Всего замеров: {len(measurements)}\n\n"
 
         response += "📝 <b>Текущие замеры:</b>\n"
-        if last.weight:
-            response += f"⚖️ Вес: <b>{last.weight:.1f}</b> кг\n"
-        if last.waist:
-            response += f"📏 Талия: <b>{last.waist:.1f}</b> см\n"
-        if last.hips:
-            response += f"📏 Бедра: <b>{last.hips:.1f}</b> см\n"
-        if last.chest:
-            response += f"📏 Грудь: <b>{last.chest:.1f}</b> см\n"
-        if last.biceps:
-            response += f"💪 Бицепс: <b>{last.biceps:.1f}</b> см\n"
+        if last['weight']:
+            response += f"⚖️ Вес: <b>{last['weight']:.1f}</b> кг\n"
+        if last['waist']:
+            response += f"📏 Талия: <b>{last['waist']:.1f}</b> см\n"
+        if last['hips']:
+            response += f"📏 Бедра: <b>{last['hips']:.1f}</b> см\n"
+        if last['chest']:
+            response += f"📏 Грудь: <b>{last['chest']:.1f}</b> см\n"
+        if last['biceps']:
+            response += f"💪 Бицепс: <b>{last['biceps']:.1f}</b> см\n"
 
         if len(measurements) >= 2:
             response += "\n📈 <b>Изменения за период:</b>\n"
@@ -399,28 +435,31 @@ async def my_progress(message: Message):
             }
 
             for field, (label, unit) in field_labels.items():
-                first_val = getattr(first, field)
-                last_val = getattr(last, field)
+                first_val = first.get(field)
+                last_val = last.get(field)
                 if first_val is not None and last_val is not None:
                     change = last_val - first_val
                     emoji = "⬆️" if change > 0 else "⬇️" if change < 0 else "➡️"
                     response += f"{emoji} {label}: <b>{change:+.1f}</b> {unit}\n"
 
+        # График
         try:
             chart_data = await chart_service.generate_simple_chart(measurements)
             if chart_data:
-                photo = BufferedInputFile(chart_data, filename=f"progress_{user.id}.png")
+                photo = BufferedInputFile(
+                    chart_data,
+                    filename=f"progress_{user['id']}.png"
+                )
                 await message.answer_photo(
                     photo=photo,
-                    caption=f"📊 График прогресса для {user.full_name or 'ученика'}"
+                    caption=f"📊 График прогресса для {user['full_name'] or 'ученика'}"
                 )
         except Exception as e:
             logger.error(f"Error generating chart in my_progress: {e}")
 
         await message.answer(
             response,
-            parse_mode=ParseMode.HTML,
-            reply_markup=get_back_keyboard()
+            parse_mode=ParseMode.HTML
         )
 
     except Exception as e:
