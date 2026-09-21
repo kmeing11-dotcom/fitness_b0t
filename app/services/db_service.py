@@ -1,6 +1,4 @@
 # app/services/db_service.py
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 from app.config import Config
 from app.models import (
     User, Measurement, TrainerClient, Reminder, ReminderLog,
@@ -15,9 +13,9 @@ logger = get_logger(__name__)
 
 
 # ============================================================
-# FIX: DotDict — словарь, к которому можно обращаться и через ['key'],
-#      и через .attr. Решает проблему "db_service возвращает dict,
-#      а хендлеры ждут объект".
+# DotDict — словарь, к которому можно обращаться и через ['key'],
+# и через .attr. Решает проблему "db_service возвращает dict,
+# а хендлеры ждут объект".
 # ============================================================
 class DotDict(dict):
     """Словарь, поддерживающий доступ через точку: d.key == d['key']."""
@@ -44,19 +42,12 @@ class DotDict(dict):
 
 class DatabaseService:
     def __init__(self):
-        connect_args = {}
-        if Config.DATABASE_URL and Config.DATABASE_URL.startswith("sqlite"):
-            connect_args = {"check_same_thread": False}
-
-        self.engine = create_engine(
-            Config.DATABASE_URL,
-            connect_args=connect_args,
-            pool_pre_ping=True,
-            pool_recycle=3600,
-            echo=Config.DEBUG if hasattr(Config, 'DEBUG') else False
-        )
-        self.Session = sessionmaker(bind=self.engine)
-        logger.info("✅ DatabaseService initialized")
+        # FIX: используем единый engine из app.db вместо своего.
+        # Раньше было два независимых engine (B9).
+        from app.db import Database
+        self.engine = Database.get_engine()
+        self.Session = Database.get_session_factory()
+        logger.info("✅ DatabaseService initialized (shared engine)")
 
     @contextmanager
     def _get_session(self):
@@ -73,7 +64,8 @@ class DatabaseService:
         finally:
             session.close()
 
-    # FIX: _user_to_dict теперь возвращает DotDict
+    # ====================== КОНВЕРТЕРЫ ======================
+
     def _user_to_dict(self, user):
         if not user:
             return None
@@ -93,7 +85,6 @@ class DatabaseService:
             'is_active': user.is_active
         })
 
-    # FIX: вспомогательные обёртки для остальных сущностей
     def _measurement_to_dict(self, m):
         if not m:
             return None
