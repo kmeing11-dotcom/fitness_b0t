@@ -752,3 +752,79 @@ async def cancel_message(callback: CallbackQuery, state: FSMContext):
     except Exception as e:
         logger.error(f"Error in cancel_message: {e}")
         await callback.answer("❌ Ошибка", show_alert=True)
+# ============================================================
+#  УНИВЕРСАЛЬНЫЙ ВОЗВРАТ В ГЛАВНОЕ МЕНЮ
+# ============================================================
+
+@router.callback_query(F.data == "back_to_menu")
+async def back_to_menu_universal(callback: CallbackQuery, state: FSMContext):
+    """Универсальный возврат в главное меню (тренер или ученик)."""
+    try:
+        await state.clear()
+
+        user = db.get_user_by_telegram(callback.from_user.id)
+        if not user:
+            await callback.answer("❌ Пользователь не найден", show_alert=True)
+            return
+
+        from app.keyboards.inline import (
+            get_trainer_menu_keyboard,
+            get_client_menu_keyboard
+        )
+
+        # Удаляем inline-сообщение
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+
+        # Отправляем новое с Reply-меню
+        if user['role'] == UserRole.TRAINER.value:
+            await callback.message.answer(
+                f"👋 <b>Главное меню тренера</b>\n\n"
+                f"Добро пожаловать, {user['full_name'] or 'Тренер'}!",
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_trainer_menu_keyboard()
+            )
+        else:
+            await callback.message.answer(
+                f"👋 <b>Главное меню ученика</b>\n\n"
+                f"Добро пожаловать, {user['full_name'] or 'Ученик'}!",
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_client_menu_keyboard()
+            )
+
+        await callback.answer()
+
+    except Exception as e:
+        logger.error(f"Error in back_to_menu_universal: {e}\n{traceback.format_exc()}")
+        await callback.answer("❌ Ошибка", show_alert=True)
+
+
+# ============================================================
+#  ВОЗВРАТ В АДМИН-ПАНЕЛЬ
+# ============================================================
+
+@router.callback_query(F.data == "back_to_admin")
+async def back_to_admin_universal(callback: CallbackQuery):
+    """Возврат в админ-панель."""
+    try:
+        from app.config import Config
+        admin_ids = Config.get_admin_ids()
+        if not admin_ids or callback.from_user.id not in admin_ids:
+            await callback.answer("❌ Доступ запрещён.", show_alert=True)
+            return
+
+        from app.keyboards.inline import get_admin_keyboard
+
+        await callback.message.edit_text(
+            "🔐 <b>Административная панель</b>\n\n"
+            "Выберите действие:",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_admin_keyboard()
+        )
+        await callback.answer()
+
+    except Exception as e:
+        logger.error(f"Error in back_to_admin_universal: {e}")
+        await callback.answer("❌ Ошибка", show_alert=True)
