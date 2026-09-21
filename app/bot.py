@@ -1,3 +1,4 @@
+# app/bot.py
 import sys
 from pathlib import Path
 
@@ -18,54 +19,15 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from app.config import Config
 from app.handlers import (
     start, client, measurements, stats,
-    reminders, admin, help, menu, trainer, reports
+    reminders, admin, help, menu, reports
+    # FIX: trainer убран — файл удалён
 )
 from app.services.reminder_service import ReminderService
 from app.utils.logger import get_logger
-from app.db import init_db, Database, engine
+from app.db import init_db, Database
 from app.handlers.reminders import init_reminder_service
-from sqlalchemy import text
 
 logger = get_logger(__name__)
-
-
-def fix_goal_enum():
-    try:
-        if not Config.DATABASE_URL or not Config.DATABASE_URL.startswith("postgresql"):
-            logger.info("Not using PostgreSQL, skipping enum fix")
-            return
-        
-        with engine.connect() as conn:
-            result = conn.execute(text("SELECT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'goal');"))
-            exists = result.scalar()
-            
-            if exists:
-                result = conn.execute(text("SELECT enum_range(NULL::goal);"))
-                values = result.fetchone()
-                if values:
-                    current_values = values[0][1:-1].split(',')
-                    logger.info(f"Current goal enum values: {current_values}")
-                    
-                    if 'weight_loss' not in current_values:
-                        logger.warning("⚠️ 'weight_loss' not found in enum, recreating...")
-                        conn.execute(text("DROP TYPE IF EXISTS goal CASCADE;"))
-                        conn.execute(text("CREATE TYPE goal AS ENUM ('weight_loss', 'muscle_gain', 'maintain');"))
-                        conn.commit()
-                        logger.info("✅ Goal enum recreated successfully!")
-                else:
-                    logger.warning("⚠️ Goal enum exists but no values, recreating...")
-                    conn.execute(text("DROP TYPE IF EXISTS goal CASCADE;"))
-                    conn.execute(text("CREATE TYPE goal AS ENUM ('weight_loss', 'muscle_gain', 'maintain');"))
-                    conn.commit()
-                    logger.info("✅ Goal enum recreated successfully!")
-            else:
-                logger.info("Creating goal enum...")
-                conn.execute(text("CREATE TYPE goal AS ENUM ('weight_loss', 'muscle_gain', 'maintain');"))
-                conn.commit()
-                logger.info("✅ Goal enum created successfully!")
-                
-    except Exception as e:
-        logger.error(f"Error fixing goal enum: {e}")
 
 
 class FitnessBot:
@@ -84,15 +46,18 @@ class FitnessBot:
             logger.error(f"❌ Configuration error: {e}")
             raise
 
-        fix_goal_enum()
+        # FIX: fix_goal_enum() удалён — модель goal = String(50), не Enum
+
         init_db()
         logger.info("✅ Database initialized")
 
         session = AiohttpSession(timeout=120)
 
+        # FIX: DefaultBotProperties — parse_mode HTML по умолчанию
         self.bot = Bot(
             token=Config.BOT_TOKEN,
             session=session,
+            default=DefaultBotProperties(parse_mode=ParseMode.HTML)
         )
         logger.info("✅ Bot created")
 
@@ -100,9 +65,10 @@ class FitnessBot:
         self._setup_routers()
         logger.info("✅ Routers registered")
 
+        # FIX: init_reminder_service ДО start(), чтобы _restore_reminders видел сервис
         self.reminder_service = ReminderService(self.bot)
-        await self.reminder_service.start()
         init_reminder_service(self.reminder_service)
+        await self.reminder_service.start()
         logger.info("✅ Reminder service created and started")
 
         Config.ensure_temp_folder()
@@ -111,28 +77,47 @@ class FitnessBot:
         self._setup_signal_handlers()
 
     def _setup_routers(self):
+        """
+        FIX: порядок критичен.
+        - reports ДО client (чтобы report_select_* не перехватился)
+        - menu — в конце (Reply-кнопки)
+        - trainer — удалён
+        """
         routers = [
-            start.router,
-            client.router,
-            measurements.router,
-            stats.router,
-            reminders.router,
-            admin.router,
-            help.router,
-            menu.router,
-            trainer.router,
-            reports.router,
+            start.router,          # /start, регистрация, goal
+            help.router,           # /help, /faq
+            measurements.router,   # /set_measurements, /my_progress
+            client.router,         # /add_client, /my_clients, info_, chart_, msg_
+            reports.router,        # /report, /my_report, report_select_*
+            stats.router,          # /stats, stats_select_*, stats_period_*
+            reminders.router,      # /set_reminder, /my_reminders, reminder_*
+            admin.router,          # /admin, admin_*, broadcast_*
+            menu.router,           # Reply-меню — последний
         ]
         for router in routers:
             self.dp.include_router(router)
 
     def _setup_signal_handlers(self):
-        def signal_handler(sig, frame):
-            logger.info(f"Received signal {sig}, stopping bot...")
-            asyncio.create_task(self.shutdown())
-
-        signal.signal(signal.SIGINT, signal_handler)
-        signal.signal(signal.SIGTERM, signal_handler)
+        """FIX: loop.add_signal_handler вместо signal.signal."""
+        try:
+            loop = asyncio.get_event_loop()
+            for sig in (signal.SIGINT, signal.SIGTERM):
+                loop.add_signal_handler(
+                    sig,
+                    lambda s=sig: asyncio.create_task(self.shutdown())
+                )
+            logger.info("✅ Signal handlers installed")
+        except NotImplementedError:
+            # Windows не поддерживает add_signal_handler для SIGTERM
+            logger.warning("⚠️ loop.add_signal_handler not supported, using signal.signal")
+            def signal_handler(sig, frame):
+                logger.info(f"Received signal {sig}, stopping bot...")
+                asyncio.create_task(self.shutdown())
+            signal.signal(signal.SIGINT, signal_handler)
+            try:
+                signal.signal(signal.SIGTERM, signal_handler)
+            except (AttributeError, ValueError):
+                pass
 
     async def start_web_server(self):
         app = web.Application()
@@ -159,9 +144,11 @@ class FitnessBot:
             await self.start_web_server()
             logger.info("🚀 Bot started successfully!")
 
+            # FIX: убран my_chat_member (не обрабатывается)
             await self.dp.start_polling(
                 self.bot,
-                allowed_updates=["message", "callback_query", "my_chat_member"]
+                allowed_updates=["message", "callback_query"],
+                skip_updates=True
             )
 
         except Exception as e:
@@ -185,19 +172,31 @@ class FitnessBot:
                 logger.info(f"Polling already stopped: {e}")
 
         if self.reminder_service:
-            await self.reminder_service.stop()
-            logger.info("✅ Reminder service stopped")
+            try:
+                await self.reminder_service.stop()
+                logger.info("✅ Reminder service stopped")
+            except Exception as e:
+                logger.warning(f"Error stopping reminder service: {e}")
 
         if self.web_runner:
-            await self.web_runner.cleanup()
-            logger.info("✅ Web server stopped")
+            try:
+                await self.web_runner.cleanup()
+                logger.info("✅ Web server stopped")
+            except Exception as e:
+                logger.warning(f"Error stopping web server: {e}")
 
         if self.bot:
-            await self.bot.session.close()
-            logger.info("✅ Bot session closed")
+            try:
+                await self.bot.session.close()
+                logger.info("✅ Bot session closed")
+            except Exception as e:
+                logger.warning(f"Error closing bot session: {e}")
 
-        Database.close_session()
-        logger.info("✅ Database sessions closed")
+        try:
+            Database.close_session()
+            logger.info("✅ Database sessions closed")
+        except Exception as e:
+            logger.warning(f"Error closing DB session: {e}")
 
         logger.info("👋 Bot stopped successfully")
 
