@@ -1,9 +1,10 @@
+# app/utils/logger.py
 import logging
 import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-# Ленивый импорт Config, чтобы избежать циклических зависимостей
+# Ленивый импорт Config
 _config = None
 
 
@@ -15,32 +16,61 @@ def get_config():
     return _config
 
 
-def setup_logger(name: str = "fitness_bot") -> logging.Logger:
-    """Настройка и получение логгера"""
+# ============================================================
+#  ГЛОБАЛЬНОЕ СОСТОЯНИЕ
+# ============================================================
+
+_initialized = False
+_base_logger: logging.Logger = None
+
+
+# ============================================================
+#  НАСТРОЙКА
+# ============================================================
+
+def _setup_base_logger() -> logging.Logger:
+    """
+    FIX: настраивает БАЗОВЫЙ логгер 'fitness_bot' один раз.
+    Все остальные логгеры — его дети (child), они пишут через его хендлеры.
+    """
+    global _initialized, _base_logger
+
+    if _initialized:
+        return _base_logger
+
     config = get_config()
 
     # Создаём папку для логов
     log_path = Path(config.LOG_FILE)
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
-    logger = logging.getLogger(name)
-    logger.setLevel(getattr(logging, config.LOG_LEVEL, logging.INFO))
+    base_logger = logging.getLogger("fitness_bot")
+    level = getattr(logging, config.LOG_LEVEL, logging.INFO)
+    base_logger.setLevel(level)
 
-    # Очищаем старые хендлеры, чтобы не дублировать
-    if logger.handlers:
-        logger.handlers.clear()
+    # Убираем старые хендлеры, если setup_logger вызвали повторно
+    if base_logger.handlers:
+        base_logger.handlers.clear()
 
-    # Консольный хендлер
+    # Не пропагандируем в root, чтобы не было двойного логирования
+    base_logger.propagate = False
+
+    # ----- Консольный хендлер -----
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(logging.INFO)
     console_format = logging.Formatter(
         '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
     console_handler.setFormatter(console_format)
-    logger.addHandler(console_handler)
+    base_logger.addHandler(console_handler)
 
-    # Файловый хендлер
+    # ----- Файловые хендлеры -----
     try:
+        file_format = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - '
+            '%(filename)s:%(lineno)d - %(message)s'
+        )
+
         file_handler = RotatingFileHandler(
             str(log_path),
             maxBytes=config.LOG_MAX_BYTES,
@@ -48,13 +78,10 @@ def setup_logger(name: str = "fitness_bot") -> logging.Logger:
             encoding='utf-8'
         )
         file_handler.setLevel(logging.DEBUG)
-        file_format = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s'
-        )
         file_handler.setFormatter(file_format)
-        logger.addHandler(file_handler)
+        base_logger.addHandler(file_handler)
 
-        # Отдельный лог для ошибок
+        # Отдельный файл для ошибок
         error_log_path = log_path.parent / "errors.log"
         error_handler = RotatingFileHandler(
             str(error_log_path),
@@ -64,31 +91,65 @@ def setup_logger(name: str = "fitness_bot") -> logging.Logger:
         )
         error_handler.setLevel(logging.ERROR)
         error_handler.setFormatter(file_format)
-        logger.addHandler(error_handler)
+        base_logger.addHandler(error_handler)
 
     except Exception as e:
-        print(f"⚠️ Failed to create file handler: {e}")
+        logging.basicConfig(level=logging.INFO)
+        logging.error(f"⚠️ Failed to create file handler: {e}")
 
-    return logger
+    _initialized = True
+    _base_logger = base_logger
+
+    return base_logger
 
 
-# Глобальный логгер (создаётся при первом вызове)
-_logger = None
+# ============================================================
+#  ПУБЛИЧНОЕ API
+# ============================================================
+
+def setup_logger(name: str = "fitness_bot") -> logging.Logger:
+    """
+    Совместимость со старым API.
+    Возвращает дочерний логгер базового 'fitness_bot'.
+    """
+    base = _setup_base_logger()
+    if name == "fitness_bot":
+        return base
+    # Если name уже с префиксом fitness_bot — не дублируем
+    if name.startswith("fitness_bot."):
+        return logging.getLogger(name)
+    return base.getChild(name)
 
 
 def get_logger(name: str = "fitness_bot") -> logging.Logger:
-    """Получить основной логгер"""
-    global _logger
-    if _logger is None:
-        _logger = setup_logger(name)
-    return _logger
+    """
+    FIX: теперь возвращает дочерний логгер для каждого модуля.
+    Все они пишут через хендлеры базового 'fitness_bot'.
+
+    Пример:
+        get_logger(__name__)    # → 'fitness_bot.app.handlers.start'
+        get_logger()            # → 'fitness_bot'
+    """
+    base = _setup_base_logger()
+
+    if not name or name == "fitness_bot":
+        return base
+
+    # Убираем "app." из имени, чтобы было короче
+    short_name = name
+    if short_name.startswith("app."):
+        short_name = short_name[4:]
+
+    return base.getChild(short_name)
 
 
 def get_child_logger(name: str) -> logging.Logger:
-    """Получить дочерний логгер для модуля"""
-    parent = get_logger()
-    return parent.getChild(name)
+    """Совместимость со старым API."""
+    return get_logger(name)
 
 
-# Создаём основной логгер при первом импорте
+# ============================================================
+#  ГЛОБАЛЬНЫЙ ЛОГГЕР
+# ============================================================
+
 logger = get_logger()
