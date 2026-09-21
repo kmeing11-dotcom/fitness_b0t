@@ -1,642 +1,418 @@
-# app/services/db_service.py
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from app.config import Config
-from app.models import (
-    User, Measurement, TrainerClient, Reminder, ReminderLog,
-    Broadcast, UserRole, Subscription
-)
+# app/services/chart_service.py
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+import numpy as np
 from datetime import datetime, timedelta
+from typing import List, Optional
+from pathlib import Path
+from io import BytesIO
+
+from app.config import Config
 from app.utils.logger import get_logger
-from contextlib import contextmanager
-import traceback
 
 logger = get_logger(__name__)
 
 
-# ============================================================
-# FIX: DotDict — словарь, к которому можно обращаться и через ['key'],
-#      и через .attr. Решает проблему "db_service возвращает dict,
-#      а хендлеры ждут объект".
-# ============================================================
-class DotDict(dict):
-    """Словарь, поддерживающий доступ через точку: d.key == d['key']."""
+class ChartService:
+    """Сервис для генерации графиков"""
 
-    def __getattr__(self, key):
-        try:
-            return self[key]
-        except KeyError:
-            raise AttributeError(
-                f"'{type(self).__name__}' object has no attribute '{key}'"
-            )
+    COLORS = {
+        'weight': '#2E86C1',
+        'waist': '#28B463',
+        'hips': '#8E44AD',
+        'chest': '#D4AC0D',
+        'biceps': '#E67E22',
+        'trend': '#E74C3C',
+        'improvement': '#27AE60',
+        'decline': '#E74C3C',
+    }
 
-    def __setattr__(self, key, value):
-        self[key] = value
-
-    def __delattr__(self, key):
-        try:
-            del self[key]
-        except KeyError:
-            raise AttributeError(
-                f"'{type(self).__name__}' object has no attribute '{key}'"
-            )
-
-
-class DatabaseService:
     def __init__(self):
-        connect_args = {}
-        if Config.DATABASE_URL and Config.DATABASE_URL.startswith("sqlite"):
-            connect_args = {"check_same_thread": False}
+        Config.ensure_temp_folder()
+        self.temp_folder = Path(Config.get_temp_folder())
+        self._setup_style()
+        self._cleanup_old_charts()
 
-        self.engine = create_engine(
-            Config.DATABASE_URL,
-            connect_args=connect_args,
-            pool_pre_ping=True,
-            pool_recycle=3600,
-            echo=Config.DEBUG if hasattr(Config, 'DEBUG') else False
+    def _setup_style(self):
+        """Настраивает стиль графиков."""
+        style_set = False
+        for style in ('seaborn-v0_8-darkgrid', 'seaborn-darkgrid', 'ggplot'):
+            try:
+                plt.style.use(style)
+                style_set = True
+                break
+            except Exception:
+                continue
+        if not style_set:
+            logger.warning("Не удалось установить стиль, используется default")
+
+        plt.rcParams['font.size'] = 10
+        plt.rcParams['figure.figsize'] = (12, 8)
+        plt.rcParams['axes.labelsize'] = 11
+        plt.rcParams['axes.titlesize'] = 13
+        plt.rcParams['legend.fontsize'] = 10
+        plt.rcParams['figure.titlesize'] = 14
+
+    def _cleanup_old_charts(self, days: int = 7):
+        """Удаляет старые графики."""
+        try:
+            cutoff = datetime.now() - timedelta(days=days)
+            for chart_file in self.temp_folder.glob("stats_*.png"):
+                if datetime.fromtimestamp(chart_file.stat().st_mtime) < cutoff:
+                    chart_file.unlink()
+            for chart_file in self.temp_folder.glob("report_chart_*.png"):
+                if datetime.fromtimestamp(chart_file.stat().st_mtime) < cutoff:
+                    chart_file.unlink()
+        except Exception as e:
+            logger.warning(f"Chart cleanup error: {e}")
+
+    def _sort_measurements(self, measurements) -> list:
+        """Сортирует замеры по дате (работает и с dict, и с объектом)."""
+        return sorted(
+            measurements,
+            key=lambda m: m['measured_at'] if isinstance(m, dict) else m.measured_at
         )
-        self.Session = sessionmaker(bind=self.engine)
-        logger.info("✅ DatabaseService initialized")
 
-    @contextmanager
-    def _get_session(self):
-        session = self.Session()
+    def _get(self, obj, key, default=None):
+        """Универсальный доступ к полю (dict или объект)."""
+        if obj is None:
+            return default
+        if isinstance(obj, dict):
+            return obj.get(key, default)
+        return getattr(obj, key, default)
+
+    def _get_measurement_arrays(self, measurements) -> dict:
+        """Возвращает массивы значений для графиков."""
+        sorted_measurements = self._sort_measurements(measurements)
+
+        weight_dates = []
+        weights = []
+
+        body_dates = []
+        waists = []
+        hips = []
+        chests = []
+        biceps = []
+
+        for m in sorted_measurements:
+            measured_at = self._get(m, 'measured_at')
+            if measured_at is None:
+                continue
+
+            w = self._get(m, 'weight')
+            if w is not None:
+                weight_dates.append(measured_at)
+                weights.append(w)
+
+            waist = self._get(m, 'waist')
+            hip = self._get(m, 'hips')
+            chest = self._get(m, 'chest')
+            bic = self._get(m, 'biceps')
+
+            if any(v is not None for v in (waist, hip, chest, bic)):
+                body_dates.append(measured_at)
+                waists.append(waist)
+                hips.append(hip)
+                chests.append(chest)
+                biceps.append(bic)
+
+        all_dates = weight_dates if weight_dates else body_dates
+
+        return {
+            'dates': all_dates,
+            'weight_dates': weight_dates,
+            'weights': weights,
+            'body_dates': body_dates,
+            'waists': waists,
+            'hips': hips,
+            'chests': chests,
+            'biceps': biceps,
+            'measurements': sorted_measurements
+        }
+
+    async def generate_stats_chart(self, user_id: int, measurements) -> Optional[str]:
+        if not measurements:
+            logger.warning(f"No measurements for user {user_id}")
+            return None
+
         try:
-            yield session
-            session.commit()
-            logger.debug("✅ Session committed")
-        except Exception as e:
-            session.rollback()
-            logger.error(f"❌ Session rolled back: {e}")
-            logger.error(f"❌ Traceback: {traceback.format_exc()}")
-            raise
-        finally:
-            session.close()
+            data = self._get_measurement_arrays(measurements)
 
-    # FIX: _user_to_dict теперь возвращает DotDict
-    def _user_to_dict(self, user):
-        if not user:
-            return None
-        return DotDict({
-            'id': user.id,
-            'telegram_id': user.telegram_id,
-            'username': user.username,
-            'full_name': user.full_name,
-            'role': user.role.value if user.role else None,
-            'phone': user.phone,
-            'studio_name': user.studio_name,
-            'age': user.age,
-            'height': user.height,
-            'goal': user.goal,
-            'timezone': user.timezone if hasattr(user, 'timezone') else 'Europe/Moscow',
-            'created_at': user.created_at,
-            'is_active': user.is_active
-        })
+            fig, axes = plt.subplots(3, 1, figsize=(12, 14))
+            ax1, ax2, ax3 = axes
 
-    # FIX: вспомогательные обёртки для остальных сущностей
-    def _measurement_to_dict(self, m):
-        if not m:
-            return None
-        return DotDict({
-            'id': m.id,
-            'user_id': m.user_id,
-            'weight': m.weight,
-            'waist': m.waist,
-            'hips': m.hips,
-            'chest': m.chest,
-            'biceps': m.biceps,
-            'measured_at': m.measured_at,
-            'notes': m.notes
-        })
-
-    def _reminder_to_dict(self, r):
-        if not r:
-            return None
-        return DotDict({
-            'id': r.id,
-            'trainer_id': r.trainer_id,
-            'day_of_week': r.day_of_week,
-            'time': r.time.strftime("%H:%M") if r.time else None,
-            'is_active': r.is_active,
-            'created_at': r.created_at
-        })
-
-    # ====================== USER ======================
-
-    def get_user_by_telegram(self, telegram_id: int):
-        with self._get_session() as session:
-            session.expire_all()
-            user = session.query(User).filter(User.telegram_id == telegram_id).first()
-            if user:
-                logger.debug(f"🔍 Found user: telegram_id={user.telegram_id}")
+            if data['weights']:
+                self._plot_weight_chart(ax1, data['weight_dates'], data['weights'])
             else:
-                logger.debug(f"⚠️ User not found: telegram_id={telegram_id}")
-            return self._user_to_dict(user)
+                ax1.text(0.5, 0.5, 'Нет данных о весе', ha='center', va='center',
+                         transform=ax1.transAxes, fontsize=14)
+                ax1.set_title('Динамика веса', fontsize=14, fontweight='bold')
 
-    def get_user(self, user_id: int):
-        with self._get_session() as session:
-            session.expire_all()
-            user = session.query(User).filter(User.id == user_id).first()
-            return self._user_to_dict(user)
+            has_body = any([data['waists'], data['hips'], data['chests'], data['biceps']])
+            if has_body:
+                self._plot_body_measurements(ax2, data)
+            else:
+                ax2.text(0.5, 0.5, 'Нет данных об объёмах', ha='center', va='center',
+                         transform=ax2.transAxes, fontsize=14)
+                ax2.set_title('Динамика объёмов', fontsize=14, fontweight='bold')
 
-    def get_user_by_username(self, username: str):
-        if not username:
-            return None
-        with self._get_session() as session:
-            session.expire_all()
-            user = session.query(User).filter(User.username == username).first()
-            return self._user_to_dict(user)
+            if len(measurements) >= 2:
+                self._plot_changes(ax3, data['measurements'])
+            else:
+                ax3.text(0.5, 0.5, 'Недостаточно данных для анализа изменений\n(нужно минимум 2 замера)',
+                         ha='center', va='center', transform=ax3.transAxes, fontsize=12)
+                ax3.set_title('Изменения за период', fontsize=14, fontweight='bold')
 
-    def create_user(self, telegram_id, username, full_name, role, **kwargs):
-        """Создаёт или обновляет пользователя. Возвращает DotDict."""
-        try:
-            with self._get_session() as session:
-                logger.info(f"💾 Creating/updating user: telegram_id={telegram_id}, role={role}")
+            for ax in axes:
+                ax.xaxis.set_major_formatter(mdates.DateFormatter('%d.%m'))
+                if data['dates'] and len(data['dates']) > 1:
+                    interval = max(1, len(data['dates']) // 7)
+                    ax.xaxis.set_major_locator(mdates.DayLocator(interval=interval))
+                plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
+                ax.grid(True, alpha=0.3)
 
-                existing_user = session.query(User).filter(
-                    User.telegram_id == telegram_id
-                ).first()
+            plt.tight_layout()
 
-                if existing_user:
-                    existing_user.username = username
-                    existing_user.full_name = full_name
-                    existing_user.role = role
-                    for key, value in kwargs.items():
-                        if hasattr(existing_user, key):
-                            setattr(existing_user, key, value)
-                    session.flush()
-                    logger.info(f"✅ User updated: {existing_user.telegram_id}")
-                    return self._user_to_dict(existing_user)
+            filepath = self.temp_folder / f"stats_{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+            plt.savefig(filepath, dpi=150, bbox_inches='tight', facecolor='white')
+            plt.close()
 
-                user = User(
-                    telegram_id=telegram_id,
-                    username=username,
-                    full_name=full_name,
-                    role=role,
-                    **kwargs
-                )
-                session.add(user)
-                session.flush()
-                logger.info(f"✅ User created: {user.telegram_id}")
-                return self._user_to_dict(user)
+            logger.info(f"✅ Chart generated: {filepath}")
+            return str(filepath)
 
         except Exception as e:
-            logger.error(f"❌❌❌ FAILED to create user: {e}")
-            logger.error(f"❌❌❌ Traceback: {traceback.format_exc()}")
-            raise
-
-    def update_user(self, user_id: int, **kwargs):
-        with self._get_session() as session:
-            user = session.query(User).filter(User.id == user_id).first()
-            if user:
-                for key, value in kwargs.items():
-                    if hasattr(user, key):
-                        setattr(user, key, value)
-                session.flush()
-                return self._user_to_dict(user)
+            logger.error(f"❌ Failed to generate chart: {e}")
+            plt.close()
             return None
 
-    def get_all_users(self):
-        with self._get_session() as session:
-            session.expire_all()
-            users = session.query(User).all()
-            return [self._user_to_dict(u) for u in users]
+    def _plot_weight_chart(self, ax, dates, weights):
+        ax.plot(dates, weights, 'o-', color=self.COLORS['weight'],
+                linewidth=2.5, markersize=8, label='Вес (кг)')
+        ax.set_title('Динамика веса', fontsize=14, fontweight='bold')
+        ax.set_ylabel('Вес (кг)')
+        ax.legend(loc='upper right')
 
-    def get_users_by_role(self, role: UserRole):
-        with self._get_session() as session:
-            session.expire_all()
-            users = session.query(User).filter(
-                User.role == role,
-                User.is_active == True
-            ).all()
-            return [self._user_to_dict(u) for u in users]
+        if len(weights) > 2:
+            x = np.arange(len(weights))
+            z = np.polyfit(x, weights, 1)
+            p = np.poly1d(z)
+            trend = p(x)
+            ax.plot(dates, trend, '--', color=self.COLORS['trend'],
+                    alpha=0.7, label='Тренд', linewidth=2)
+            ax.legend(loc='upper right')
 
-    def get_users_by_ids(self, user_ids: list):
-        if not user_ids:
-            return []
-        with self._get_session() as session:
-            session.expire_all()
-            users = session.query(User).filter(User.id.in_(user_ids)).all()
-            return [self._user_to_dict(u) for u in users]
+    def _plot_body_measurements(self, ax, data):
+        measurement_fields = [
+            ('waists', 'Талия (см)', self.COLORS['waist']),
+            ('hips', 'Бёдра (см)', self.COLORS['hips']),
+            ('chests', 'Грудь (см)', self.COLORS['chest']),
+            ('biceps', 'Бицепс (см)', self.COLORS['biceps']),
+        ]
 
-    # ====================== CLIENTS ======================
+        dates = data['body_dates']
 
-    def get_trainer_clients(self, trainer_id: int):
-        with self._get_session() as session:
-            session.expire_all()
-            users = session.query(User).join(
-                TrainerClient, User.id == TrainerClient.client_id
-            ).filter(
-                TrainerClient.trainer_id == trainer_id,
-                TrainerClient.is_active == True,
-                User.is_active == True
-            ).all()
-            return [self._user_to_dict(u) for u in users]
+        for key, label, color in measurement_fields:
+            values = data[key]
+            if not values:
+                continue
+            clean_dates = []
+            clean_values = []
+            for d, v in zip(dates, values):
+                if v is not None:
+                    clean_dates.append(d)
+                    clean_values.append(v)
+            if clean_values:
+                ax.plot(clean_dates, clean_values, 'o-', color=color,
+                        linewidth=2, markersize=6, label=label)
 
-    def get_trainer_clients_full(self, trainer_id: int):
-        with self._get_session() as session:
-            session.expire_all()
-            clients = session.query(TrainerClient).filter(
-                TrainerClient.trainer_id == trainer_id,
-                TrainerClient.is_active == True
-            ).all()
-            return [
-                DotDict({
-                    'id': c.id,
-                    'trainer_id': c.trainer_id,
-                    'client_id': c.client_id,
-                    'created_at': c.created_at,
-                    'is_active': c.is_active
-                })
-                for c in clients
-            ]
+        ax.set_title('Динамика объёмов', fontsize=14, fontweight='bold')
+        ax.set_ylabel('Объём (см)')
+        ax.legend(loc='upper right')
 
-    def get_client_trainers(self, client_id: int):
-        with self._get_session() as session:
-            session.expire_all()
-            users = session.query(User).join(
-                TrainerClient, User.id == TrainerClient.trainer_id
-            ).filter(
-                TrainerClient.client_id == client_id,
-                TrainerClient.is_active == True,
-                User.is_active == True
-            ).all()
-            return [self._user_to_dict(u) for u in users]
+    def _plot_changes(self, ax, measurements):
+        first = measurements[0]
+        last = measurements[-1]
 
-    def add_client_to_trainer(self, trainer_id: int, client_id: int) -> bool:
-        with self._get_session() as session:
-            existing = session.query(TrainerClient).filter_by(
-                trainer_id=trainer_id,
-                client_id=client_id
-            ).first()
+        changes = []
+        labels = []
+        colors = []
 
-            if existing:
-                if not existing.is_active:
-                    existing.is_active = True
-                    session.flush()
-                    return True
-                return False
+        measurement_fields = [
+            ('weight', 'Вес (кг)'),
+            ('waist', 'Талия (см)'),
+            ('hips', 'Бёдра (см)'),
+            ('chest', 'Грудь (см)'),
+            ('biceps', 'Бицепс (см)'),
+        ]
 
-            tc = TrainerClient(trainer_id=trainer_id, client_id=client_id)
-            session.add(tc)
-            session.flush()
-            return True
+        for field, label in measurement_fields:
+            first_val = self._get(first, field)
+            last_val = self._get(last, field)
 
-    def remove_client_from_trainer(self, trainer_id: int, client_id: int):
-        with self._get_session() as session:
-            session.query(TrainerClient).filter_by(
-                trainer_id=trainer_id,
-                client_id=client_id
-            ).update({"is_active": False})
+            if first_val is not None and last_val is not None:
+                change = last_val - first_val
+                changes.append(change)
+                labels.append(label)
 
-    def is_trainer_of_client(self, trainer_id: int, client_id: int) -> bool:
-        with self._get_session() as session:
-            return session.query(TrainerClient).filter(
-                TrainerClient.trainer_id == trainer_id,
-                TrainerClient.client_id == client_id,
-                TrainerClient.is_active == True
-            ).first() is not None
+                if field in ('weight', 'waist'):
+                    colors.append(self.COLORS['improvement'] if change < 0
+                                  else self.COLORS['decline'])
+                else:
+                    colors.append(self.COLORS['improvement'] if change > 0
+                                  else self.COLORS['decline'])
 
-    # ====================== MEASUREMENTS ======================
+        if changes:
+            bars = ax.bar(labels, changes, color=colors, alpha=0.8,
+                          edgecolor='black', linewidth=0.5)
+            ax.axhline(y=0, color='black', linestyle='-', linewidth=1)
+            ax.set_title('Изменения за период', fontsize=14, fontweight='bold')
+            ax.set_ylabel('Изменение')
 
-    def create_measurement(self, user_id: int, data: dict):
-        with self._get_session() as session:
-            m = Measurement(user_id=user_id, **data)
-            session.add(m)
-            session.flush()
-            return self._measurement_to_dict(m)
+            for bar, val in zip(bars, changes):
+                height = bar.get_height()
+                ax.text(
+                    bar.get_x() + bar.get_width() / 2.,
+                    height if height > 0 else height - max(0.5, abs(height) * 0.15),
+                    f'{val:+.1f}',
+                    ha='center',
+                    va='bottom' if height > 0 else 'top',
+                    fontsize=10,
+                    fontweight='bold'
+                )
 
-    def get_measurements(self, user_id: int, days: int = 30):
-        cutoff = datetime.now() - timedelta(days=days)
-        with self._get_session() as session:
-            session.expire_all()
-            measurements = session.query(Measurement).filter(
-                Measurement.user_id == user_id,
-                Measurement.measured_at >= cutoff
-            ).order_by(Measurement.measured_at.asc()).all()
-            return [self._measurement_to_dict(m) for m in measurements]
+            max_change = max(abs(c) for c in changes) if changes else 1
+            ax.set_ylim(-max_change * 1.3, max_change * 1.3)
 
-    def get_all_measurements(self, user_id: int, limit: int = None):
-        with self._get_session() as session:
-            session.expire_all()
-            query = session.query(Measurement).filter(
-                Measurement.user_id == user_id
-            ).order_by(Measurement.measured_at.desc())
-            if limit:
-                query = query.limit(limit)
-            measurements = query.all()
-            return [self._measurement_to_dict(m) for m in measurements]
-
-    def get_last_measurement(self, user_id: int):
-        with self._get_session() as session:
-            session.expire_all()
-            m = session.query(Measurement).filter(
-                Measurement.user_id == user_id
-            ).order_by(Measurement.measured_at.desc()).first()
-            return self._measurement_to_dict(m)
-
-    def get_first_measurement(self, user_id: int):
-        with self._get_session() as session:
-            session.expire_all()
-            m = session.query(Measurement).filter(
-                Measurement.user_id == user_id
-            ).order_by(Measurement.measured_at.asc()).first()
-            return self._measurement_to_dict(m)
-
-    def get_measurement_stats(self, user_id: int, days: int = 30):
-        with self._get_session() as session:
-            from sqlalchemy import func
-            stats = session.query(
-                func.min(Measurement.weight).label('min_weight'),
-                func.max(Measurement.weight).label('max_weight'),
-                func.avg(Measurement.weight).label('avg_weight'),
-                func.count(Measurement.id).label('total')
-            ).filter(
-                Measurement.user_id == user_id,
-                Measurement.measured_at >= datetime.now() - timedelta(days=days)
-            ).first()
-            if stats:
-                return DotDict({
-                    'min_weight': stats.min_weight,
-                    'max_weight': stats.max_weight,
-                    'avg_weight': stats.avg_weight,
-                    'total': stats.total
-                })
+    async def generate_stats_chart_bytes(self, user_id: int, measurements) -> Optional[bytes]:
+        if not measurements:
             return None
 
-    # ====================== REMINDERS ======================
+        try:
+            data = self._get_measurement_arrays(measurements)
 
-    def create_reminder(self, trainer_id: int, day_of_week: int, time_str: str):
-        t = datetime.strptime(time_str, "%H:%M").time()
-        with self._get_session() as session:
-            reminder = Reminder(
-                trainer_id=trainer_id,
-                day_of_week=day_of_week,
-                time=t,
-                is_active=True
-            )
-            session.add(reminder)
-            session.flush()
-            return self._reminder_to_dict(reminder)
+            fig, axes = plt.subplots(2, 1, figsize=(10, 10))
+            ax1, ax2 = axes
 
-    def get_trainer_reminders(self, trainer_id: int):
-        with self._get_session() as session:
-            session.expire_all()
-            reminders = session.query(Reminder).filter(
-                Reminder.trainer_id == trainer_id,
-                Reminder.is_active == True
-            ).all()
-            return [self._reminder_to_dict(r) for r in reminders]
+            if data['weights']:
+                self._plot_weight_chart(ax1, data['weight_dates'], data['weights'])
+            else:
+                ax1.text(0.5, 0.5, 'Нет данных', ha='center', va='center',
+                         transform=ax1.transAxes)
+                ax1.set_title('Динамика веса', fontsize=14, fontweight='bold')
 
-    def get_reminder(self, reminder_id: int):
-        with self._get_session() as session:
-            session.expire_all()
-            r = session.query(Reminder).filter(Reminder.id == reminder_id).first()
-            return self._reminder_to_dict(r)
+            has_body = any([data['waists'], data['hips'], data['chests'], data['biceps']])
+            if has_body:
+                self._plot_body_measurements(ax2, data)
+            else:
+                ax2.text(0.5, 0.5, 'Нет данных', ha='center', va='center',
+                         transform=ax2.transAxes)
+                ax2.set_title('Динамика объёмов', fontsize=14, fontweight='bold')
 
-    def update_reminder(self, reminder_id: int, **kwargs):
-        with self._get_session() as session:
-            r = session.query(Reminder).filter(Reminder.id == reminder_id).first()
-            if r:
-                for key, value in kwargs.items():
-                    if hasattr(r, key):
-                        setattr(r, key, value)
-                session.flush()
-                return self._reminder_to_dict(r)
+            for ax in axes:
+                ax.xaxis.set_major_formatter(mdates.DateFormatter('%d.%m'))
+                if data['dates'] and len(data['dates']) > 1:
+                    interval = max(1, len(data['dates']) // 7)
+                    ax.xaxis.set_major_locator(mdates.DayLocator(interval=interval))
+                plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
+                ax.grid(True, alpha=0.3)
+
+            plt.tight_layout()
+
+            buf = BytesIO()
+            plt.savefig(buf, format='png', dpi=150, bbox_inches='tight', facecolor='white')
+            plt.close()
+            buf.seek(0)
+            return buf.read()
+
+        except Exception as e:
+            logger.error(f"❌ Failed to generate chart bytes: {e}")
+            plt.close()
             return None
 
-    def delete_reminder(self, reminder_id: int):
-        with self._get_session() as session:
-            session.query(Reminder).filter(Reminder.id == reminder_id).update(
-                {"is_active": False}
-            )
-
-    def log_reminder(self, reminder_id: int, client_id: int, is_followup: bool = False):
-        with self._get_session() as session:
-            log = ReminderLog(
-                reminder_id=reminder_id,
-                client_id=client_id,
-                is_followup=is_followup,
-                is_acknowledged=False
-            )
-            session.add(log)
-            session.flush()
-            return DotDict({
-                'id': log.id,
-                'reminder_id': log.reminder_id,
-                'client_id': log.client_id,
-                'sent_at': log.sent_at,
-                'is_followup': log.is_followup,
-                'is_acknowledged': log.is_acknowledged
-            })
-
-    def get_reminder_logs(self, client_id: int, days: int = 30):
-        cutoff = datetime.now() - timedelta(days=days)
-        with self._get_session() as session:
-            session.expire_all()
-            logs = session.query(ReminderLog).filter(
-                ReminderLog.client_id == client_id,
-                ReminderLog.sent_at >= cutoff
-            ).all()
-            return [
-                DotDict({
-                    'id': log.id,
-                    'reminder_id': log.reminder_id,
-                    'client_id': log.client_id,
-                    'sent_at': log.sent_at,
-                    'is_followup': log.is_followup,
-                    'is_acknowledged': log.is_acknowledged
-                })
-                for log in logs
-            ]
-
-    # ====================== BROADCAST ======================
-
-    def broadcast_message(self, message: str, sender_id: int):
-        with self._get_session() as session:
-            b = Broadcast(message=message, sent_by=sender_id, recipients_count=0)
-            session.add(b)
-            session.flush()
-            return b.id
-
-    def update_broadcast_count(self, broadcast_id: int, count: int):
-        with self._get_session() as session:
-            session.query(Broadcast).filter(Broadcast.id == broadcast_id).update(
-                {"recipients_count": count}
-            )
-
-    def get_broadcasts(self, limit: int = 10):
-        with self._get_session() as session:
-            session.expire_all()
-            broadcasts = session.query(Broadcast).order_by(
-                Broadcast.sent_at.desc()
-            ).limit(limit).all()
-            return [
-                DotDict({
-                    'id': b.id,
-                    'message': b.message,
-                    'sent_by': b.sent_by,
-                    'sent_at': b.sent_at,
-                    'recipients_count': b.recipients_count
-                })
-                for b in broadcasts
-            ]
-
-    # ====================== SUBSCRIPTIONS ======================
-
-    def get_user_subscription(self, user_id: int):
-        with self._get_session() as session:
-            session.expire_all()
-            sub = session.query(Subscription).filter(
-                Subscription.user_id == user_id,
-                Subscription.is_active == True
-            ).first()
-            if sub:
-                return DotDict({
-                    'id': sub.id,
-                    'user_id': sub.user_id,
-                    'plan': sub.plan.value if hasattr(sub.plan, 'value') else sub.plan,
-                    'expires_at': sub.expires_at,
-                    'created_at': sub.created_at,
-                    'is_active': sub.is_active
-                })
+    async def generate_report_chart(self, user_id: int, measurements) -> Optional[str]:
+        if not measurements:
             return None
 
-    def set_trial_subscription(self, user_id: int, days: int = 7):
-        with self._get_session() as session:
-            old = session.query(Subscription).filter_by(user_id=user_id).first()
-            if old:
-                old.is_active = False
+        try:
+            data = self._get_measurement_arrays(measurements)
 
-            expires_at = datetime.now() + timedelta(days=days)
-            sub = Subscription(
-                user_id=user_id,
-                plan="pro",
-                expires_at=expires_at,
-                is_active=True
-            )
-            session.add(sub)
-            session.flush()
-            return DotDict({
-                'id': sub.id,
-                'user_id': sub.user_id,
-                'plan': sub.plan.value if hasattr(sub.plan, 'value') else sub.plan,
-                'expires_at': sub.expires_at,
-                'created_at': sub.created_at,
-                'is_active': sub.is_active
-            })
+            fig, ax = plt.subplots(figsize=(10, 6))
 
-    def set_subscription(self, user_id: int, plan: str, days: int = 30):
-        with self._get_session() as session:
-            old = session.query(Subscription).filter_by(user_id=user_id).first()
-            if old:
-                old.is_active = False
+            if data['weights']:
+                ax.plot(data['weight_dates'], data['weights'], 'o-',
+                        color=self.COLORS['weight'], linewidth=2.5, markersize=8)
+                ax.set_title('Динамика веса', fontsize=14, fontweight='bold')
+                ax.set_xlabel('Дата')
+                ax.set_ylabel('Вес (кг)')
+                ax.grid(True, alpha=0.3)
 
-            expires_at = datetime.now() + timedelta(days=days)
-            sub = Subscription(
-                user_id=user_id,
-                plan=plan,
-                expires_at=expires_at,
-                is_active=True
-            )
-            session.add(sub)
-            session.flush()
-            return DotDict({
-                'id': sub.id,
-                'user_id': sub.user_id,
-                'plan': sub.plan.value if hasattr(sub.plan, 'value') else sub.plan,
-                'expires_at': sub.expires_at,
-                'created_at': sub.created_at,
-                'is_active': sub.is_active
-            })
+                if len(data['weights']) > 2:
+                    x = np.arange(len(data['weights']))
+                    z = np.polyfit(x, data['weights'], 1)
+                    p = np.poly1d(z)
+                    trend = p(x)
+                    ax.plot(data['weight_dates'], trend, '--',
+                            color=self.COLORS['trend'], alpha=0.7, label='Тренд')
+                    ax.legend()
 
-    def cancel_subscription(self, user_id: int) -> bool:
-        with self._get_session() as session:
-            sub = session.query(Subscription).filter_by(
-                user_id=user_id, is_active=True
-            ).first()
-            if sub:
-                sub.is_active = False
-                session.flush()
-                return True
-            return False
+                ax.xaxis.set_major_formatter(mdates.DateFormatter('%d.%m'))
+                if len(data['weight_dates']) > 1:
+                    interval = max(1, len(data['weight_dates']) // 5)
+                    ax.xaxis.set_major_locator(mdates.DayLocator(interval=interval))
+                plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
+            else:
+                ax.text(0.5, 0.5, 'Нет данных о весе', ha='center', va='center',
+                        transform=ax.transAxes, fontsize=14)
 
-    def is_subscription_active(self, user_id: int) -> bool:
-        with self._get_session() as session:
-            sub = session.query(Subscription).filter_by(
-                user_id=user_id, is_active=True
-            ).first()
-            if not sub:
-                return False
-            return sub.expires_at > datetime.now()
+            plt.tight_layout()
 
-    def get_all_active_subscriptions(self) -> int:
-        with self._get_session() as session:
-            return session.query(Subscription).filter(
-                Subscription.is_active == True,
-                Subscription.expires_at > datetime.now()
-            ).count()
+            filepath = self.temp_folder / f"report_chart_{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+            plt.savefig(filepath, dpi=120, bbox_inches='tight', facecolor='white')
+            plt.close()
+            return str(filepath)
 
-    def get_expired_subscriptions(self):
-        with self._get_session() as session:
-            session.expire_all()
-            subs = session.query(Subscription).filter(
-                Subscription.is_active == True,
-                Subscription.expires_at <= datetime.now()
-            ).all()
-            return [
-                DotDict({
-                    'id': sub.id,
-                    'user_id': sub.user_id,
-                    'plan': sub.plan.value if hasattr(sub.plan, 'value') else sub.plan,
-                    'expires_at': sub.expires_at,
-                    'created_at': sub.created_at,
-                    'is_active': sub.is_active
-                })
-                for sub in subs
-            ]
+        except Exception as e:
+            logger.error(f"❌ Failed to generate report chart: {e}")
+            plt.close()
+            return None
 
-    # ====================== STATISTICS ======================
+    async def generate_simple_chart(self, measurements) -> Optional[bytes]:
+        if not measurements:
+            return None
 
-    def get_daily_measurements_count(self) -> int:
-        today = datetime.now().date()
-        with self._get_session() as session:
-            return session.query(Measurement).filter(
-                Measurement.measured_at >= today
-            ).count()
+        try:
+            data = self._get_measurement_arrays(measurements)
 
-    def get_daily_active_users(self) -> int:
-        with self._get_session() as session:
-            return session.query(User).filter(User.is_active == True).count()
+            fig, ax = plt.subplots(figsize=(8, 5))
 
-    def get_stats(self):
-        with self._get_session() as session:
-            from sqlalchemy import func
-            total_users = session.query(func.count(User.id)).scalar()
-            active_users = session.query(func.count(User.id)).filter(
-                User.is_active == True
-            ).scalar()
-            total_trainers = session.query(func.count(User.id)).filter(
-                User.role == UserRole.TRAINER
-            ).scalar()
-            total_clients = session.query(func.count(User.id)).filter(
-                User.role == UserRole.CLIENT
-            ).scalar()
+            if data['weights']:
+                ax.plot(data['weight_dates'], data['weights'], 'o-',
+                        color=self.COLORS['weight'], linewidth=2.5, markersize=8)
+                ax.set_title('Прогресс веса', fontsize=14, fontweight='bold')
+                ax.set_xlabel('Дата')
+                ax.set_ylabel('Вес (кг)')
+                ax.grid(True, alpha=0.3)
 
-            today_measurements = session.query(Measurement).filter(
-                Measurement.measured_at >= datetime.now().date()
-            ).count()
+                ax.xaxis.set_major_formatter(mdates.DateFormatter('%d.%m'))
+                if len(data['weight_dates']) > 1:
+                    interval = max(1, len(data['weight_dates']) // 5)
+                    ax.xaxis.set_major_locator(mdates.DayLocator(interval=interval))
+                plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
+            else:
+                ax.text(0.5, 0.5, 'Нет данных', ha='center', va='center',
+                        transform=ax.transAxes, fontsize=14)
 
-            active_subscriptions = session.query(Subscription).filter(
-                Subscription.is_active == True,
-                Subscription.expires_at > datetime.now()
-            ).count()
+            plt.tight_layout()
 
-            return {
-                'total_users': total_users or 0,
-                'active_users': active_users or 0,
-                'total_trainers': total_trainers or 0,
-                'total_clients': total_clients or 0,
-                'today_measurements': today_measurements,
-                'active_subscriptions': active_subscriptions or 0
-            }
+            buf = BytesIO()
+            plt.savefig(buf, format='png', dpi=120, bbox_inches='tight', facecolor='white')
+            plt.close()
+            buf.seek(0)
+            return buf.read()
+
+        except Exception as e:
+            logger.error(f"❌ Failed to generate simple chart: {e}")
+            plt.close()
+            return None
