@@ -94,7 +94,7 @@ async def admin_stats_callback(callback: CallbackQuery):
         await callback.message.edit_text(
             response,
             parse_mode=ParseMode.HTML,
-            reply_markup=get_back_inline_keyboard("back_to_menu")
+            reply_markup=get_admin_keyboard()
         )
         await callback.answer()
 
@@ -119,12 +119,11 @@ async def admin_users_callback(callback: CallbackQuery):
         if not users:
             await callback.message.edit_text(
                 "📭 В системе нет пользователей.",
-                reply_markup=get_back_inline_keyboard("back_to_menu")
+                reply_markup=get_admin_keyboard()
             )
             await callback.answer()
             return
 
-        # FIX: user['role'] вместо user.role
         trainers = [u for u in users if u['role'] == UserRole.TRAINER.value]
         clients = [u for u in users if u['role'] == UserRole.CLIENT.value]
 
@@ -152,7 +151,7 @@ async def admin_users_callback(callback: CallbackQuery):
         await callback.message.edit_text(
             response,
             parse_mode=ParseMode.HTML,
-            reply_markup=get_back_inline_keyboard("back_to_menu")
+            reply_markup=get_admin_keyboard()
         )
         await callback.answer()
 
@@ -186,7 +185,7 @@ async def admin_subscriptions_callback(callback: CallbackQuery):
         if not subscriptions:
             await callback.message.edit_text(
                 "📭 Нет активных подписок.",
-                reply_markup=get_back_inline_keyboard("back_to_menu")
+                reply_markup=get_admin_keyboard()
             )
             await callback.answer()
             return
@@ -197,7 +196,6 @@ async def admin_subscriptions_callback(callback: CallbackQuery):
         for item in subscriptions[:20]:
             user = item['user']
             sub = item['subscription']
-            # FIX: sub['expires_at'] вместо sub.expires_at
             status = "🟢 Активна" if sub['expires_at'] > datetime.now() else "🔴 Истекла"
             response += (
                 f"• {user['full_name'] or user['username']} "
@@ -211,7 +209,7 @@ async def admin_subscriptions_callback(callback: CallbackQuery):
         await callback.message.edit_text(
             response,
             parse_mode=ParseMode.HTML,
-            reply_markup=get_back_inline_keyboard("back_to_menu")
+            reply_markup=get_admin_keyboard()
         )
         await callback.answer()
 
@@ -236,7 +234,11 @@ async def admin_broadcast_callback(callback: CallbackQuery, state: FSMContext):
             "Введите текст сообщения для рассылки всем пользователям:\n"
             "<i>(Можно использовать HTML-разметку)</i>",
             parse_mode=ParseMode.HTML,
-            reply_markup=get_cancel_keyboard()  # Reply-клавиатура с "Отмена" — норм для message
+            reply_markup=get_admin_keyboard()
+        )
+        await callback.message.answer(
+            "👇 Или нажмите «Отмена»:",
+            reply_markup=get_cancel_keyboard()
         )
         await state.set_state(BroadcastStates.entering_message)
         await callback.answer()
@@ -264,8 +266,10 @@ async def admin_backup_callback(callback: CallbackQuery):
 
         if not backup_path:
             await callback.message.edit_text(
-                "❌ Не удалось создать бэкап.",
-                reply_markup=get_back_inline_keyboard("back_to_menu")
+                "❌ Не удалось создать бэкап.\n\n"
+                "<i>Для PostgreSQL файловый бэкап не поддерживается.</i>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_admin_keyboard()
             )
             return
 
@@ -288,7 +292,7 @@ async def admin_backup_callback(callback: CallbackQuery):
         try:
             await callback.message.edit_text(
                 "❌ Ошибка при создании бэкапа.",
-                reply_markup=get_back_inline_keyboard("back_to_menu")
+                reply_markup=get_admin_keyboard()
             )
         except Exception:
             pass
@@ -313,12 +317,11 @@ async def admin_logs_callback(callback: CallbackQuery):
         if not log_path.exists():
             await callback.message.edit_text(
                 "❌ Файл логов не найден.",
-                reply_markup=get_back_inline_keyboard("back_to_menu")
+                reply_markup=get_admin_keyboard()
             )
             await callback.answer()
             return
 
-        # FIX: deque — не читает весь файл в память
         with open(log_path, 'r', encoding='utf-8', errors='ignore') as f:
             last_lines = list(deque(f, maxlen=100))
 
@@ -339,7 +342,7 @@ async def admin_logs_callback(callback: CallbackQuery):
                 f"📋 <b>Последние логи:</b>\n\n"
                 f"<code>{log_text}</code>",
                 parse_mode=ParseMode.HTML,
-                reply_markup=get_back_inline_keyboard("back_to_menu")
+                reply_markup=get_admin_keyboard()
             )
 
         logger.info(f"📋 Logs viewed by admin {callback.from_user.id}")
@@ -350,36 +353,11 @@ async def admin_logs_callback(callback: CallbackQuery):
         try:
             await callback.message.edit_text(
                 "❌ Ошибка при загрузке логов.",
-                reply_markup=get_back_inline_keyboard("back_to_menu")
+                reply_markup=get_admin_keyboard()
             )
         except Exception:
             pass
         await callback.answer()
-
-
-# ============================================================
-#  НАЗАД В АДМИН-ПАНЕЛЬ
-# ============================================================
-
-@router.callback_query(F.data == "back_to_menu")
-async def back_to_admin_menu(callback: CallbackQuery):
-    """Возврат в админ-панель (для админа)."""
-    try:
-        if not is_admin(callback.from_user.id):
-            await callback.answer("❌ Доступ запрещён.", show_alert=True)
-            return
-
-        await callback.message.edit_text(
-            "🔐 <b>Административная панель</b>\n\n"
-            "Выберите действие:",
-            parse_mode=ParseMode.HTML,
-            reply_markup=get_admin_keyboard()
-        )
-        await callback.answer()
-
-    except Exception as e:
-        logger.error(f"Error in back_to_admin_menu: {e}")
-        await callback.answer("❌ Ошибка", show_alert=True)
 
 
 # ============================================================
@@ -430,7 +408,7 @@ async def confirm_broadcast(callback: CallbackQuery, state: FSMContext):
         if not text:
             await callback.message.edit_text(
                 "❌ Текст сообщения не найден.",
-                reply_markup=get_back_inline_keyboard("back_to_menu")
+                reply_markup=get_admin_keyboard()
             )
             await callback.answer()
             await state.clear()
@@ -442,7 +420,7 @@ async def confirm_broadcast(callback: CallbackQuery, state: FSMContext):
         if total_users == 0:
             await callback.message.edit_text(
                 "❌ Нет пользователей для рассылки.",
-                reply_markup=get_back_inline_keyboard("back_to_menu")
+                reply_markup=get_admin_keyboard()
             )
             await callback.answer()
             await state.clear()
@@ -459,7 +437,6 @@ async def confirm_broadcast(callback: CallbackQuery, state: FSMContext):
 
         for user in users:
             try:
-                # FIX: user['telegram_id']
                 await callback.bot.send_message(
                     chat_id=user['telegram_id'],
                     text=text,
@@ -478,7 +455,7 @@ async def confirm_broadcast(callback: CallbackQuery, state: FSMContext):
             f"❌ Не доставлено: {failed_count}\n"
             f"👥 Всего: {total_users}",
             parse_mode=ParseMode.HTML,
-            reply_markup=get_back_inline_keyboard("back_to_menu")
+            reply_markup=get_admin_keyboard()
         )
 
         logger.info(
@@ -493,7 +470,7 @@ async def confirm_broadcast(callback: CallbackQuery, state: FSMContext):
         try:
             await callback.message.edit_text(
                 "❌ Ошибка при отправке рассылки.",
-                reply_markup=get_back_inline_keyboard("back_to_menu")
+                reply_markup=get_admin_keyboard()
             )
         except Exception:
             pass
@@ -506,7 +483,7 @@ async def confirm_broadcast(callback: CallbackQuery, state: FSMContext):
 async def cancel_broadcast(callback: CallbackQuery, state: FSMContext):
     await callback.message.edit_text(
         "❌ Рассылка отменена.",
-        reply_markup=get_back_inline_keyboard("back_to_menu")
+        reply_markup=get_admin_keyboard()
     )
     await state.clear()
     await callback.answer()
@@ -542,11 +519,7 @@ async def admin_stats(message: Message):
             f"📅 <b>Дата:</b> {datetime.now().strftime('%d.%m.%Y %H:%M')}"
         )
 
-        await message.answer(
-            response,
-            parse_mode=ParseMode.HTML,
-            reply_markup=get_back_inline_keyboard("back_to_menu")
-        )
+        await message.answer(response, parse_mode=ParseMode.HTML)
 
         logger.info(f"📊 Admin stats viewed by {message.from_user.id}")
 
