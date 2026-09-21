@@ -1,37 +1,67 @@
+# app/services/backup_service.py
 import shutil
 import gzip
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional, List
-import logging
+from typing import Optional
 
 from app.config import Config
+from app.utils.logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class BackupService:
-    """Сервис для создания и управления бэкапами"""
+    """Сервис для создания и управления бэкапами БД."""
+
+    @staticmethod
+    def _get_db_path() -> Optional[Path]:
+        """
+        FIX: определяет путь к SQLite-БД из Config.DATABASE_URL.
+        Раньше искал только в CWD по именам fitness_bot.db и т.п.
+        """
+        url = Config.DATABASE_URL or ""
+
+        # SQLite: sqlite:///./fitness_bot.db  или sqlite:////abs/path.db
+        if url.startswith("sqlite"):
+            # Отрезаем "sqlite:///"
+            raw = url.replace("sqlite:///", "", 1).replace("sqlite://", "", 1)
+            # Убираем query-параметры (?check_same_thread=...)
+            raw = raw.split("?")[0]
+            p = Path(raw)
+            if not p.is_absolute():
+                p = Path.cwd() / p
+            return p if p.exists() else None
+
+        # PostgreSQL и прочее — файловый бэкап невозможен
+        return None
 
     @staticmethod
     async def backup_database(compress: bool = True) -> Optional[str]:
-        """Создаёт бэкап базы данных."""
+        """Создаёт бэкап базы данных (SQLite)."""
         try:
-            backup_dir = Path(Config.TEMP_FOLDER) / "backups"
+            backup_dir = Path(Config.get_temp_folder()) / "backups"
             backup_dir.mkdir(parents=True, exist_ok=True)
 
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-            db_path = Path("fitness_bot.db")
-            if not db_path.exists():
-                alternatives = ["fitness.db", "bot.db", "app.db"]
-                for alt in alternatives:
-                    if Path(alt).exists():
-                        db_path = Path(alt)
+            # FIX: сначала пробуем взять путь из DATABASE_URL
+            db_path = BackupService._get_db_path()
+
+            # Fallback: старый поиск по CWD
+            if db_path is None:
+                for name in ("fitness_bot.db", "fitness.db", "bot.db", "app.db"):
+                    candidate = Path(name)
+                    if candidate.exists():
+                        db_path = candidate
                         break
-                else:
-                    logger.error("❌ Database file not found")
-                    return None
+
+            if db_path is None or not db_path.exists():
+                logger.error(
+                    "❌ Database file not found. "
+                    "Для PostgreSQL файловый бэкап не поддерживается."
+                )
+                return None
 
             backup_name = f"db_backup_{timestamp}.sql"
             backup_path = backup_dir / backup_name
@@ -40,7 +70,9 @@ class BackupService:
             logger.info(f"✅ SQLite backup created: {backup_path}")
 
             if compress:
-                compressed_path = backup_path.with_suffix(backup_path.suffix + ".gz")
+                compressed_path = backup_path.with_suffix(
+                    backup_path.suffix + ".gz"
+                )
                 with open(backup_path, 'rb') as f_in:
                     with gzip.open(compressed_path, 'wb') as f_out:
                         shutil.copyfileobj(f_in, f_out)
@@ -55,10 +87,13 @@ class BackupService:
             return None
 
     @staticmethod
-    async def cleanup_old_backups(days_to_keep: int = 7, keep_min: int = 3) -> int:
+    async def cleanup_old_backups(
+        days_to_keep: int = 7,
+        keep_min: int = 3
+    ) -> int:
         """Удаляет старые бэкапы."""
         try:
-            backup_dir = Path(Config.TEMP_FOLDER) / "backups"
+            backup_dir = Path(Config.get_temp_folder()) / "backups"
             if not backup_dir.exists():
                 return 0
 
@@ -66,7 +101,10 @@ class BackupService:
             removed_count = 0
 
             backup_files = list(backup_dir.glob("db_backup_*.sql*"))
-            backup_files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+            backup_files.sort(
+                key=lambda f: f.stat().st_mtime,
+                reverse=True
+            )
 
             if len(backup_files) <= keep_min:
                 return 0
