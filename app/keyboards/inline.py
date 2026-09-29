@@ -6,12 +6,8 @@ from aiogram.types import (
 from typing import List, Optional
 
 
-# ============================================================
-#  УТИЛИТА: универсальный доступ к полю
-# ============================================================
-
 def _get(obj, key, default=None):
-    """FIX: работает и с dict, и с DotDict, и с ORM-объектом."""
+    """Универсальный доступ к полю (dict / DotDict / объект)."""
     if obj is None:
         return default
     if isinstance(obj, dict):
@@ -56,7 +52,12 @@ def get_client_menu_keyboard() -> ReplyKeyboardMarkup:
 
 
 def get_cancel_keyboard() -> ReplyKeyboardMarkup:
-    kb = [[KeyboardButton(text="❌ Отмена")]]
+    """
+    FIX: раньше была кнопка «❌ Отмена» — не работала.
+    Теперь — «🔙 Назад». Используется в FSM, где хендлер
+    сам ловит текст «🔙 Назад» и отменяет ввод.
+    """
+    kb = [[KeyboardButton(text="🔙 Назад")]]
     return ReplyKeyboardMarkup(
         keyboard=kb,
         resize_keyboard=True,
@@ -65,7 +66,7 @@ def get_cancel_keyboard() -> ReplyKeyboardMarkup:
 
 
 def get_back_keyboard() -> ReplyKeyboardMarkup:
-    """Reply-клавиатура с кнопкой Назад (только для обычных сообщений!)."""
+    """Reply-клавиатура с кнопкой Назад (только для обычных сообщений)."""
     kb = [[KeyboardButton(text="🔙 Назад")]]
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
 
@@ -89,10 +90,6 @@ def get_clients_list_keyboard(
     page: int = 0,
     per_page: int = 5
 ) -> Optional[InlineKeyboardMarkup]:
-    """
-    FIX: раньше функция НЕ ВОЗВРАЩАЛА результат (обрывалась).
-    FIX: формат callback page → page_{page}_{action} (parts[2] = page).
-    """
     if not clients:
         return None
 
@@ -116,7 +113,6 @@ def get_clients_list_keyboard(
             )
         ])
 
-    # Пагинация (FIX: page в конце, action в середине)
     nav_row = []
     if page > 0:
         nav_row.append(InlineKeyboardButton(
@@ -131,7 +127,6 @@ def get_clients_list_keyboard(
     if nav_row:
         kb.append(nav_row)
 
-    # Кнопка Назад
     kb.append([
         InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_menu")
     ])
@@ -140,14 +135,13 @@ def get_clients_list_keyboard(
 
 
 def get_client_actions_keyboard(client_id: int) -> InlineKeyboardMarkup:
-    """Клавиатура действий с клиентом (карточка)."""
     kb = [
         [
             InlineKeyboardButton(text="📊 Замеры", callback_data=f"measurements_{client_id}")
         ],
         [
             InlineKeyboardButton(text="📈 График", callback_data=f"chart_{client_id}"),
-            InlineKeyboardButton(text="📄 Отчёт", callback_data=f"report_{client_id}")
+            InlineKeyboardButton(text="📄 Отчёт", callback_data=f"report_select_{client_id}")
         ],
         [
             InlineKeyboardButton(text="✏️ Написать", callback_data=f"msg_{client_id}"),
@@ -171,7 +165,6 @@ def get_confirm_delete_keyboard(client_id: int) -> InlineKeyboardMarkup:
 
 
 def get_client_action_keyboard(action: str, trainer_id: int) -> InlineKeyboardMarkup:
-    """Клавиатура Принять/Отклонить приглашение тренера."""
     kb = [
         [
             InlineKeyboardButton(text="✅ Принять", callback_data=f"{action}:{trainer_id}"),
@@ -332,11 +325,7 @@ def get_goal_inline_keyboard() -> InlineKeyboardMarkup:
 #  ОБЩИЕ
 # ============================================================
 
-def get_back_inline_keyboard(callback: str = "back_to_clients") -> InlineKeyboardMarkup:
-    """
-    FIX: универсальная inline-кнопка Назад.
-    Использовать только в edit_text / answer с inline-сообщениями.
-    """
+def get_back_inline_keyboard(callback: str = "back_to_menu") -> InlineKeyboardMarkup:
     kb = [
         [InlineKeyboardButton(text="🔙 Назад", callback_data=callback)]
     ]
