@@ -5,7 +5,6 @@ from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.enums import ParseMode
-from datetime import datetime
 import traceback
 
 from app.services.db_service import DatabaseService
@@ -29,6 +28,9 @@ class MeasurementStates(StatesGroup):
     hips = State()
     chest = State()
     biceps = State()
+
+
+CANCEL_TEXTS = ("🔙 Назад", "❌ Отмена")
 
 
 # ============================================================
@@ -83,7 +85,7 @@ async def start_measurements(message: Message, state: FSMContext):
 @router.message(StateFilter(MeasurementStates.weight))
 async def process_weight(message: Message, state: FSMContext):
     try:
-        if message.text == "❌ Отмена":
+        if message.text in CANCEL_TEXTS:
             await cancel_measurements(message, state)
             return
 
@@ -91,19 +93,12 @@ async def process_weight(message: Message, state: FSMContext):
             weight = float(message.text.replace(',', '.'))
         except ValueError:
             await message.answer(
-                "❌ Пожалуйста, введите корректное число (например, 75.5).",
+                "❌ Введите корректное число (например, 75.5).",
                 reply_markup=get_cancel_keyboard()
             )
             return
 
-        if weight <= 0:
-            await message.answer(
-                "❌ Значение должно быть больше 0.",
-                reply_markup=get_cancel_keyboard()
-            )
-            return
-
-        if weight < 20 or weight > 500:
+        if weight <= 0 or weight < 20 or weight > 500:
             await message.answer(
                 "❌ Вес должен быть от 20 до 500 кг.",
                 reply_markup=get_cancel_keyboard()
@@ -120,7 +115,7 @@ async def process_weight(message: Message, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Error in process_weight: {e}")
-        await message.answer("❌ Ошибка при обработке веса.")
+        await message.answer("❌ Ошибка.")
 
 
 # ============================================================
@@ -130,7 +125,7 @@ async def process_weight(message: Message, state: FSMContext):
 @router.message(StateFilter(MeasurementStates.waist))
 async def process_waist(message: Message, state: FSMContext):
     try:
-        if message.text == "❌ Отмена":
+        if message.text in CANCEL_TEXTS:
             await cancel_measurements(message, state)
             return
 
@@ -138,19 +133,12 @@ async def process_waist(message: Message, state: FSMContext):
             waist = float(message.text.replace(',', '.'))
         except ValueError:
             await message.answer(
-                "❌ Пожалуйста, введите корректное число (например, 85.5).",
+                "❌ Введите корректное число (например, 85.5).",
                 reply_markup=get_cancel_keyboard()
             )
             return
 
-        if waist <= 0:
-            await message.answer(
-                "❌ Значение должно быть больше 0.",
-                reply_markup=get_cancel_keyboard()
-            )
-            return
-
-        if waist < 20 or waist > 300:
+        if waist <= 0 or waist < 20 or waist > 300:
             await message.answer(
                 "❌ Талия должна быть от 20 до 300 см.",
                 reply_markup=get_cancel_keyboard()
@@ -167,7 +155,7 @@ async def process_waist(message: Message, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Error in process_waist: {e}")
-        await message.answer("❌ Ошибка при обработке талии.")
+        await message.answer("❌ Ошибка.")
 
 
 # ============================================================
@@ -177,7 +165,7 @@ async def process_waist(message: Message, state: FSMContext):
 @router.message(StateFilter(MeasurementStates.hips))
 async def process_hips(message: Message, state: FSMContext):
     try:
-        if message.text == "❌ Отмена":
+        if message.text in CANCEL_TEXTS:
             await cancel_measurements(message, state)
             return
 
@@ -185,19 +173,12 @@ async def process_hips(message: Message, state: FSMContext):
             hips = float(message.text.replace(',', '.'))
         except ValueError:
             await message.answer(
-                "❌ Пожалуйста, введите корректное число (например, 95.5).",
+                "❌ Введите корректное число (например, 95.5).",
                 reply_markup=get_cancel_keyboard()
             )
             return
 
-        if hips <= 0:
-            await message.answer(
-                "❌ Значение должно быть больше 0.",
-                reply_markup=get_cancel_keyboard()
-            )
-            return
-
-        if hips < 20 or hips > 300:
+        if hips <= 0 or hips < 20 or hips > 300:
             await message.answer(
                 "❌ Бедра должны быть от 20 до 300 см.",
                 reply_markup=get_cancel_keyboard()
@@ -214,7 +195,7 @@ async def process_hips(message: Message, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Error in process_hips: {e}")
-        await message.answer("❌ Ошибка при обработке бедер.")
+        await message.answer("❌ Ошибка.")
 
 
 # ============================================================
@@ -224,7 +205,7 @@ async def process_hips(message: Message, state: FSMContext):
 @router.message(StateFilter(MeasurementStates.chest))
 async def process_chest(message: Message, state: FSMContext):
     try:
-        if message.text == "❌ Отмена":
+        if message.text in CANCEL_TEXTS:
             await cancel_measurements(message, state)
             return
 
@@ -232,19 +213,12 @@ async def process_chest(message: Message, state: FSMContext):
             chest = float(message.text.replace(',', '.'))
         except ValueError:
             await message.answer(
-                "❌ Пожалуйста, введите корректное число (например, 100.5).",
+                "❌ Введите корректное число (например, 100.5).",
                 reply_markup=get_cancel_keyboard()
             )
             return
 
-        if chest <= 0:
-            await message.answer(
-                "❌ Значение должно быть больше 0.",
-                reply_markup=get_cancel_keyboard()
-            )
-            return
-
-        if chest < 20 or chest > 300:
+        if chest <= 0 or chest < 20 or chest > 300:
             await message.answer(
                 "❌ Грудь должна быть от 20 до 300 см.",
                 reply_markup=get_cancel_keyboard()
@@ -261,7 +235,7 @@ async def process_chest(message: Message, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Error in process_chest: {e}")
-        await message.answer("❌ Ошибка при обработке груди.")
+        await message.answer("❌ Ошибка.")
 
 
 # ============================================================
@@ -271,7 +245,7 @@ async def process_chest(message: Message, state: FSMContext):
 @router.message(StateFilter(MeasurementStates.biceps))
 async def process_biceps(message: Message, state: FSMContext):
     try:
-        if message.text == "❌ Отмена":
+        if message.text in CANCEL_TEXTS:
             await cancel_measurements(message, state)
             return
 
@@ -279,19 +253,12 @@ async def process_biceps(message: Message, state: FSMContext):
             biceps = float(message.text.replace(',', '.'))
         except ValueError:
             await message.answer(
-                "❌ Пожалуйста, введите корректное число (например, 35.5).",
+                "❌ Введите корректное число (например, 35.5).",
                 reply_markup=get_cancel_keyboard()
             )
             return
 
-        if biceps <= 0:
-            await message.answer(
-                "❌ Значение должно быть больше 0.",
-                reply_markup=get_cancel_keyboard()
-            )
-            return
-
-        if biceps < 5 or biceps > 100:
+        if biceps <= 0 or biceps < 5 or biceps > 100:
             await message.answer(
                 "❌ Бицепс должен быть от 5 до 100 см.",
                 reply_markup=get_cancel_keyboard()
@@ -338,10 +305,7 @@ async def process_biceps(message: Message, state: FSMContext):
             return
 
         db.create_measurement(user['id'], measurement_data)
-        logger.info(
-            f"✅ Measurements saved for user {user['id']}: "
-            f"{len(measurement_data)} fields"
-        )
+        logger.info(f"✅ Measurements saved for user {user['id']}")
 
         response = "✅ <b>Замеры сохранены!</b>\n\n"
         for field, value in measurement_data.items():
@@ -352,10 +316,7 @@ async def process_biceps(message: Message, state: FSMContext):
 
         response += "\n📊 Для просмотра прогресса используйте /my_progress"
 
-        await message.answer(
-            response,
-            parse_mode=ParseMode.HTML
-        )
+        await message.answer(response, parse_mode=ParseMode.HTML)
         await state.clear()
 
     except Exception as e:
@@ -398,9 +359,7 @@ async def my_progress(message: Message):
             )
             return
 
-        sorted_measurements = sorted(
-            measurements, key=lambda m: m['measured_at']
-        )
+        sorted_measurements = sorted(measurements, key=lambda m: m['measured_at'])
         last = sorted_measurements[-1]
         first = sorted_measurements[0]
 
@@ -442,7 +401,6 @@ async def my_progress(message: Message):
                     emoji = "⬆️" if change > 0 else "⬇️" if change < 0 else "➡️"
                     response += f"{emoji} {label}: <b>{change:+.1f}</b> {unit}\n"
 
-        # График
         try:
             chart_data = await chart_service.generate_simple_chart(measurements)
             if chart_data:
@@ -457,10 +415,11 @@ async def my_progress(message: Message):
         except Exception as e:
             logger.error(f"Error generating chart in my_progress: {e}")
 
-        await message.answer(
-            response,
-            parse_mode=ParseMode.HTML
-        )
+        await message.answer(response, parse_mode=ParseMode.HTML)
+
+    except Exception as e:
+        logger.error(f"Error in my_progress: {e}\n{traceback.format_exc()}")
+        await message.answer("❌ Ошибка при загрузке прогресса.")
 
     except Exception as e:
         logger.error(f"Error in my_progress: {e}\n{traceback.format_exc()}")
