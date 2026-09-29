@@ -7,6 +7,8 @@ from reportlab.platypus import (
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.lib.enums import TA_CENTER
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from datetime import datetime
 from typing import List, Optional
 from pathlib import Path
@@ -17,16 +19,62 @@ from app.utils.logger import get_logger
 logger = get_logger(__name__)
 
 
+# ============================================================
+#  РЕГИСТРАЦИЯ ШРИФТОВ С КИРИЛЛИЦЕЙ
+# ============================================================
+
+def _register_fonts() -> bool:
+    """
+    FIX: регистрирует DejaVu Sans (поддерживает кириллицу).
+    Без этого русские буквы в PDF — квадратики.
+    """
+    fonts_dir = Path(__file__).parent.parent / "fonts"
+
+    candidates_regular = [
+        fonts_dir / "DejaVuSans.ttf",
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        Path("C:/Windows/Fonts/DejaVuSans.ttf"),
+        Path("C:/Windows/Fonts/arial.ttf"),  # fallback — тоже кириллица
+    ]
+    candidates_bold = [
+        fonts_dir / "DejaVuSans-Bold.ttf",
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
+        Path("C:/Windows/Fonts/DejaVuSans-Bold.ttf"),
+        Path("C:/Windows/Fonts/arialbd.ttf"),
+    ]
+
+    regular_path = next((p for p in candidates_regular if p.exists()), None)
+    bold_path = next((p for p in candidates_bold if p.exists()), None)
+
+    if not regular_path:
+        logger.warning("❌ Не найден шрифт с кириллицей — PDF будет с квадратиками")
+        return False
+
+    try:
+        pdfmetrics.registerFont(TTFont('CustomFont', str(regular_path)))
+        if bold_path:
+            pdfmetrics.registerFont(TTFont('CustomFont-Bold', str(bold_path)))
+        logger.info(f"✅ Шрифт зарегистрирован: {regular_path}")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Ошибка регистрации шрифта: {e}")
+        return False
+
+
+_FONTS_OK = _register_fonts()
+FONT_REGULAR = 'CustomFont' if _FONTS_OK else 'Helvetica'
+FONT_BOLD = 'CustomFont-Bold' if _FONTS_OK else 'Helvetica-Bold'
+
+
 class PDFService:
     def __init__(self):
         Config.ensure_temp_folder()
-        self.temp_folder = Path(Config.get_temp_folder())  # FIX: абсолютный путь
+        self.temp_folder = Path(Config.get_temp_folder())
         self.styles = getSampleStyleSheet()
         self.create_custom_styles()
 
     @staticmethod
     def _get(obj, key, default=None):
-        """FIX: универсальный доступ к полю (dict / DotDict / ORM-объект)."""
         if obj is None:
             return default
         if isinstance(obj, dict):
@@ -37,6 +85,7 @@ class PDFService:
         self.styles.add(ParagraphStyle(
             name='CustomTitle',
             parent=self.styles['Heading1'],
+            fontName=FONT_BOLD,
             fontSize=18,
             textColor=colors.HexColor('#2E4053'),
             spaceAfter=30,
@@ -45,6 +94,7 @@ class PDFService:
         self.styles.add(ParagraphStyle(
             name='CustomHeading',
             parent=self.styles['Heading2'],
+            fontName=FONT_BOLD,
             fontSize=14,
             textColor=colors.HexColor('#2E4053'),
             spaceAfter=12
@@ -52,6 +102,7 @@ class PDFService:
         self.styles.add(ParagraphStyle(
             name='CustomNormal',
             parent=self.styles['Normal'],
+            fontName=FONT_REGULAR,
             fontSize=10,
             spaceAfter=6
         ))
@@ -63,7 +114,6 @@ class PDFService:
         measurements: List,
         chart_path: Optional[str] = None
     ) -> Optional[str]:
-        # FIX: timestamp в имени, чтобы избежать гонки
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         filepath = self.temp_folder / f"report_{user_id}_{timestamp}.pdf"
 
@@ -78,11 +128,11 @@ class PDFService:
 
         story = []
 
-        # ===== Заголовок =====
+        # Заголовок
         story.append(Paragraph("Отчёт о прогрессе", self.styles['CustomTitle']))
         story.append(Spacer(1, 0.25 * inch))
 
-        # ===== Информация о клиенте =====
+        # Информация о клиенте
         story.append(Paragraph("Информация о клиенте", self.styles['CustomHeading']))
         story.append(Spacer(1, 0.1 * inch))
 
@@ -107,7 +157,7 @@ class PDFService:
 
         info_table = Table(info_data, colWidths=[2 * inch, 3 * inch])
         info_table.setStyle(TableStyle([
-            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+            ('FONTNAME', (0, 0), (-1, -1), FONT_REGULAR),
             ('FONTSIZE', (0, 0), (-1, -1), 10),
             ('BACKGROUND', (0, 0), (0, -1), colors.lightgrey),
             ('TEXTCOLOR', (0, 0), (0, -1), colors.HexColor('#2E4053')),
@@ -120,7 +170,7 @@ class PDFService:
         story.append(info_table)
         story.append(Spacer(1, 0.3 * inch))
 
-        # ===== Таблица замеров =====
+        # Таблица замеров
         story.append(Paragraph("Замеры (последние 4 недели)", self.styles['CustomHeading']))
         story.append(Spacer(1, 0.1 * inch))
 
@@ -146,12 +196,9 @@ class PDFService:
                     fmt(self._get(m, 'biceps')),
                 ])
 
-            measure_table = Table(
-                table_data,
-                colWidths=[1.1 * inch] * 6
-            )
+            measure_table = Table(table_data, colWidths=[1.1 * inch] * 6)
             measure_table.setStyle(TableStyle([
-                ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+                ('FONTNAME', (0, 0), (-1, -1), FONT_REGULAR),
                 ('FONTSIZE', (0, 0), (-1, -1), 8),
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2E4053')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
@@ -166,7 +213,7 @@ class PDFService:
             story.append(Paragraph("Замеры пока отсутствуют.", self.styles['CustomNormal']))
             story.append(Spacer(1, 0.3 * inch))
 
-        # ===== График =====
+        # График
         if chart_path and Path(chart_path).exists():
             story.append(Paragraph("График прогресса веса", self.styles['CustomHeading']))
             story.append(Spacer(1, 0.1 * inch))
@@ -177,7 +224,7 @@ class PDFService:
             except Exception as e:
                 logger.warning(f"Не удалось вставить график в PDF: {e}")
 
-        # ===== Сводка =====
+        # Сводка
         story.append(Paragraph("Сводка изменений", self.styles['CustomHeading']))
         story.append(Spacer(1, 0.1 * inch))
 
@@ -192,20 +239,20 @@ class PDFService:
             if first_w is not None and last_w is not None:
                 change = last_w - first_w
                 if change < 0:
-                    summary_text += f"✅ Снижение веса на {abs(change):.1f} кг. "
+                    summary_text += f"Снижение веса на {abs(change):.1f} кг. "
                 elif change > 0:
-                    summary_text += f"⚠️ Набор веса {change:.1f} кг. "
+                    summary_text += f"Набор веса {change:.1f} кг. "
                 else:
-                    summary_text += "➡️ Вес без изменений. "
+                    summary_text += "Вес без изменений. "
 
             first_waist = self._get(first, 'waist')
             last_waist = self._get(last, 'waist')
             if first_waist is not None and last_waist is not None:
                 change = last_waist - first_waist
                 if change < 0:
-                    summary_text += f"✅ Уменьшение талии на {abs(change):.1f} см. "
+                    summary_text += f"Уменьшение талии на {abs(change):.1f} см. "
                 elif change > 0:
-                    summary_text += f"⚠️ Увеличение талии на {change:.1f} см. "
+                    summary_text += f"Увеличение талии на {change:.1f} см. "
 
             if not summary_text:
                 summary_text = "Недостаточно данных для анализа."
@@ -213,17 +260,16 @@ class PDFService:
             story.append(Paragraph(summary_text, self.styles['CustomNormal']))
             story.append(Spacer(1, 0.1 * inch))
 
-            # Рекомендация
             goal = self._get(client, 'goal')
             if first_w is not None and last_w is not None:
                 if last_w < first_w:
                     story.append(Paragraph(
-                        "💪 Отличный результат! Продолжайте в том же духе.",
+                        "Отличный результат! Продолжайте в том же духе.",
                         self.styles['CustomNormal']
                     ))
                 elif last_w > first_w and goal == "weight_loss":
                     story.append(Paragraph(
-                        "⚠️ Вес вырос. Рекомендуется пересмотреть питание и нагрузку.",
+                        "Вес вырос. Рекомендуется пересмотреть питание и нагрузку.",
                         self.styles['CustomNormal']
                     ))
         else:
