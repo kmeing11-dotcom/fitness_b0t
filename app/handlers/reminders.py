@@ -27,6 +27,7 @@ router = Router()
 db = DatabaseService()
 
 _reminder_service = None
+CANCEL_TEXTS = ("🔙 Назад", "❌ Отмена")
 
 
 class ReminderStates(StatesGroup):
@@ -47,7 +48,7 @@ def get_reminder_service() -> ReminderService:
 
 
 # ============================================================
-#  КОМАНДА /set_reminder
+#  /set_reminder
 # ============================================================
 
 @router.message(Command("set_reminder"))
@@ -62,9 +63,12 @@ async def set_reminder(message: Message, state: FSMContext):
             await message.answer("❌ Эта команда доступна только тренерам.")
             return
 
+        tz = user.get('timezone') or 'Europe/Moscow'
+
         await message.answer(
-            "📅 Выберите день недели для напоминания:\n\n"
-            "<i>В этот день ваши ученики будут получать напоминание о замерах.</i>",
+            f"📅 Выберите день недели для напоминания:\n\n"
+            f"<i>Напоминания будут приходить ученикам по вашему "
+            f"часовому поясу: <b>{tz}</b></i>",
             parse_mode=ParseMode.HTML,
             reply_markup=get_days_of_week_keyboard()
         )
@@ -72,19 +76,19 @@ async def set_reminder(message: Message, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Error in set_reminder: {e}")
-        await message.answer("❌ Ошибка при настройке напоминания.")
+        await message.answer("❌ Ошибка.")
 
 
 # ============================================================
 #  ВЫБОР ДНЯ
 # ============================================================
 
-@router.callback_query(StateFilter(ReminderStates.choosing_day),
-                       F.data.startswith("reminder_day_"))
+@router.callback_query(
+    StateFilter(ReminderStates.choosing_day),
+    F.data.startswith("reminder_day_")
+)
 async def process_day_selection(callback: CallbackQuery, state: FSMContext):
     try:
-        logger.info(f"📥 [reminder_day_] data: {callback.data}")
-
         day_str = callback.data.split("_")[2]
 
         if day_str == "daily":
@@ -99,7 +103,8 @@ async def process_day_selection(callback: CallbackQuery, state: FSMContext):
 
         await callback.message.edit_text(
             f"✅ Выбран день: <b>{day_name}</b>\n\n"
-            f"🕐 Теперь выберите время или введите в формате <b>ЧЧ:ММ</b> (например, 10:00):",
+            f"🕐 Теперь выберите время или введите в формате "
+            f"<b>ЧЧ:ММ</b> (например, 10:00):",
             parse_mode=ParseMode.HTML,
             reply_markup=get_time_selection_keyboard()
         )
@@ -114,13 +119,16 @@ async def process_day_selection(callback: CallbackQuery, state: FSMContext):
 
 
 # ============================================================
-#  ВЫБОР ВРЕМЕНИ
+#  ВЫБОР ВРЕМЕНИ (текст)
 # ============================================================
 
 @router.message(StateFilter(ReminderStates.choosing_time))
 async def process_time_selection(message: Message, state: FSMContext):
     try:
-        logger.info(f"📥 [process_time_selection] text: {message.text}")
+        if message.text in CANCEL_TEXTS:
+            await state.clear()
+            await message.answer("❌ Создание напоминания отменено.")
+            return
 
         time_str = message.text.strip()
 
@@ -129,8 +137,7 @@ async def process_time_selection(message: Message, state: FSMContext):
         except ValueError:
             await message.answer(
                 "❌ Неверный формат времени.\n"
-                "Пожалуйста, используйте формат <b>ЧЧ:ММ</b>\n"
-                "Пример: 10:00",
+                "Используйте формат <b>ЧЧ:ММ</b>\nПример: 10:00",
                 parse_mode=ParseMode.HTML,
                 reply_markup=get_cancel_keyboard()
             )
@@ -145,74 +152,55 @@ async def process_time_selection(message: Message, state: FSMContext):
             await state.clear()
             return
 
-        logger.info(f"📝 Creating reminder: trainer_id={user['id']}, day={day}, time={time_str}")
+        tz = user.get('timezone') or 'Europe/Moscow'
 
         reminder = db.create_reminder(user['id'], day, time_str)
-        logger.info(f"✅ Reminder created: {reminder}")
-
         if not reminder:
-            await message.answer(
-                "❌ Не удалось создать напоминание. Попробуйте позже.",
-                reply_markup=get_cancel_keyboard()
-            )
+            await message.answer("❌ Не удалось создать напоминание.")
             await state.clear()
             return
 
         reminder_service = get_reminder_service()
-        logger.info(f"📝 Reminder service: {reminder_service}")
-
         if reminder_service:
             try:
                 await reminder_service.schedule_reminder(
                     trainer_id=user['id'],
                     day_of_week=day,
                     time_str=time_str,
-                    reminder_id=reminder['id']
+                    reminder_id=reminder['id'],
+                    timezone=tz
                 )
-                logger.info(f"✅ Reminder scheduled: user={user['id']}, day={day}, time={time_str}")
             except Exception as e:
-                logger.error(f"Failed to schedule reminder: {e}")
-                await message.answer(
-                    "⚠️ Напоминание создано в БД, но не запланировано.\n"
-                    "Оно будет восстановлено при перезапуске бота."
-                )
-        else:
-            logger.error("❌ Reminder service is None!")
-            await message.answer(
-                "⚠️ Сервис напоминаний не инициализирован.\n"
-                "Напоминание сохранено в БД и будет активировано позже."
-            )
+                logger.error(f"Failed to schedule: {e}")
 
         day_name = get_day_name(day)
         await message.answer(
             f"✅ <b>Напоминание установлено!</b>\n\n"
             f"📅 День: {day_name}\n"
-            f"🕐 Время: {time_str}\n\n"
-            f"💡 В указанное время все ваши ученики будут получать напоминание о замерах.",
+            f"🕐 Время: {time_str}\n"
+            f"🌍 Часовой пояс: {tz}\n\n"
+            f"💡 Ученики будут получать напоминание по вашему времени.",
             parse_mode=ParseMode.HTML,
-            reply_markup=get_back_inline_keyboard()
+            reply_markup=get_back_inline_keyboard("back_to_menu")
         )
         await state.clear()
 
     except Exception as e:
         logger.error(f"❌ Error in process_time_selection: {e}\n{traceback.format_exc()}")
-        await message.answer(
-            f"❌ Ошибка при создании напоминания: {str(e)[:200]}",
-            reply_markup=get_cancel_keyboard()
-        )
+        await message.answer("❌ Ошибка.")
         await state.clear()
 
 
-@router.callback_query(StateFilter(ReminderStates.choosing_time),
-                       F.data.startswith("reminder_time_"))
+@router.callback_query(
+    StateFilter(ReminderStates.choosing_time),
+    F.data.startswith("reminder_time_")
+)
 async def process_time_callback(callback: CallbackQuery, state: FSMContext):
     try:
-        logger.info(f"📥 [reminder_time_] data: {callback.data}")
-
         time_str = callback.data.split("_")[2]
 
         if time_str == "custom":
-            cancel_inline_keyboard = InlineKeyboardMarkup(
+            cancel_kb = InlineKeyboardMarkup(
                 inline_keyboard=[
                     [InlineKeyboardButton(
                         text="❌ Отмена",
@@ -222,22 +210,19 @@ async def process_time_callback(callback: CallbackQuery, state: FSMContext):
             )
             await callback.message.edit_text(
                 "🕐 Введите время в формате <b>ЧЧ:ММ</b>\n"
-                "Пример: 10:00\n\n"
-                "<i>Или нажмите кнопку отмены.</i>",
+                "Пример: 10:00",
                 parse_mode=ParseMode.HTML,
-                reply_markup=cancel_inline_keyboard
+                reply_markup=cancel_kb
             )
             await callback.answer()
             return
 
-        # FIX: раньше здесь создавался Message вручную — оставил, но аккуратно
         await callback.message.edit_text(
             f"✅ Выбрано время: <b>{time_str}</b>\n\n"
-            "Подтверждаю создание напоминания...",
+            "Подтверждаю создание...",
             parse_mode=ParseMode.HTML
         )
 
-        # Вызываем логику через отдельный обработчик
         await _create_reminder(callback, state, time_str)
         await callback.answer()
 
@@ -247,7 +232,6 @@ async def process_time_callback(callback: CallbackQuery, state: FSMContext):
 
 
 async def _create_reminder(callback: CallbackQuery, state: FSMContext, time_str: str):
-    """FIX: вынесено отдельно, чтобы не создавать Message вручную."""
     data = await state.get_data()
     day = data.get('day')
 
@@ -257,11 +241,13 @@ async def _create_reminder(callback: CallbackQuery, state: FSMContext, time_str:
         await state.clear()
         return
 
+    tz = user.get('timezone') or 'Europe/Moscow'
+
     reminder = db.create_reminder(user['id'], day, time_str)
     if not reminder:
         await callback.message.edit_text(
-            "❌ Не удалось создать напоминание. Попробуйте позже.",
-            reply_markup=get_back_inline_keyboard()
+            "❌ Не удалось создать напоминание.",
+            reply_markup=get_back_inline_keyboard("back_to_menu")
         )
         await state.clear()
         return
@@ -273,19 +259,21 @@ async def _create_reminder(callback: CallbackQuery, state: FSMContext, time_str:
                 trainer_id=user['id'],
                 day_of_week=day,
                 time_str=time_str,
-                reminder_id=reminder['id']
+                reminder_id=reminder['id'],
+                timezone=tz
             )
         except Exception as e:
-            logger.error(f"Failed to schedule reminder: {e}")
+            logger.error(f"Failed to schedule: {e}")
 
     day_name = get_day_name(day)
     await callback.message.edit_text(
         f"✅ <b>Напоминание установлено!</b>\n\n"
         f"📅 День: {day_name}\n"
-        f"🕐 Время: {time_str}\n\n"
-        f"💡 В указанное время все ваши ученики будут получать напоминание.",
+        f"🕐 Время: {time_str}\n"
+        f"🌍 Часовой пояс: {tz}\n\n"
+        f"💡 Ученики будут получать напоминание по вашему времени.",
         parse_mode=ParseMode.HTML,
-        reply_markup=get_back_inline_keyboard()
+        reply_markup=get_back_inline_keyboard("back_to_menu")
     )
     await state.clear()
 
@@ -300,7 +288,7 @@ async def cancel_reminder(callback: CallbackQuery, state: FSMContext):
         await state.clear()
         await callback.message.edit_text(
             "❌ Создание напоминания отменено.",
-            reply_markup=get_back_inline_keyboard()
+            reply_markup=get_back_inline_keyboard("back_to_menu")
         )
         await callback.answer()
     except Exception as e:
@@ -314,13 +302,8 @@ async def cancel_reminder(callback: CallbackQuery, state: FSMContext):
 
 def get_day_name(day) -> str:
     days = {
-        0: "Понедельник",
-        1: "Вторник",
-        2: "Среда",
-        3: "Четверг",
-        4: "Пятница",
-        5: "Суббота",
-        6: "Воскресенье",
+        0: "Понедельник", 1: "Вторник", 2: "Среда",
+        3: "Четверг", 4: "Пятница", 5: "Суббота", 6: "Воскресенье",
         None: "📅 Ежедневно"
     }
     return days.get(day, "Неизвестно")
@@ -357,31 +340,30 @@ async def my_reminders(message: Message):
     try:
         user = db.get_user_by_telegram(message.from_user.id)
         if not user:
-            await message.answer("❌ Вы не зарегистрированы. Используйте /start.")
+            await message.answer("❌ Вы не зарегистрированы.")
             return
 
         if user['role'] != UserRole.TRAINER.value:
-            await message.answer("❌ Эта команда доступна только тренерам.")
+            await message.answer("❌ Только для тренеров.")
             return
 
         reminders = db.get_trainer_reminders(user['id'])
+        tz = user.get('timezone') or 'Europe/Moscow'
 
         if not reminders:
             await message.answer(
-                "📅 У вас пока нет настроенных напоминаний.\n\n"
-                "Настройте напоминание: /set_reminder"
+                "📅 У вас пока нет напоминаний.\n\n"
+                "Настройте: /set_reminder"
             )
             return
 
-        response = "📅 <b>Ваши напоминания:</b>\n\n"
+        response = f"📅 <b>Ваши напоминания</b>\n"
+        response += f"🌍 Часовой пояс: <b>{tz}</b>\n\n"
 
         for i, reminder in enumerate(reminders, 1):
             day_name = get_day_name(reminder['day_of_week'])
-            status = "✅ Активно" if reminder['is_active'] else "⏸️ Приостановлено"
-            # FIX: reminder['time'] — уже строка "HH:MM"
-            response += f"{i}. {day_name}, {reminder['time']} — {status}\n"
-
-        response += "\n<i>Нажмите на напоминание для управления.</i>"
+            status = "✅" if reminder['is_active'] else "⏸️"
+            response += f"{i}. {day_name}, {reminder['time']} {status}\n"
 
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
@@ -401,7 +383,7 @@ async def my_reminders(message: Message):
 
     except Exception as e:
         logger.error(f"Error in my_reminders: {e}\n{traceback.format_exc()}")
-        await message.answer("❌ Ошибка при загрузке напоминаний.")
+        await message.answer("❌ Ошибка.")
 
 
 # ============================================================
@@ -415,7 +397,7 @@ async def manage_reminder(callback: CallbackQuery):
         reminder = db.get_reminder(reminder_id)
 
         if not reminder:
-            await callback.answer("❌ Напоминание не найдено", show_alert=True)
+            await callback.answer("❌ Не найдено", show_alert=True)
             return
 
         user = db.get_user_by_telegram(callback.from_user.id)
@@ -425,22 +407,22 @@ async def manage_reminder(callback: CallbackQuery):
 
         day_name = get_day_name(reminder['day_of_week'])
         status = "✅ Активно" if reminder['is_active'] else "⏸️ Приостановлено"
+        tz = user.get('timezone') or 'Europe/Moscow'
 
         text = (
             f"📅 <b>Управление напоминанием</b>\n\n"
             f"📅 День: {day_name}\n"
             f"🕐 Время: {reminder['time']}\n"
+            f"🌍 Часовой пояс: {tz}\n"
             f"📊 Статус: {status}\n"
-            f"📋 Создано: {reminder['created_at'].strftime('%d.%m.%Y')}\n\n"
-            f"<i>Выберите действие:</i>"
+            f"📋 Создано: {reminder['created_at'].strftime('%d.%m.%Y')}"
         )
 
         await callback.message.edit_text(
             text,
             parse_mode=ParseMode.HTML,
             reply_markup=get_reminder_actions_keyboard(
-                reminder['id'],
-                reminder['is_active']
+                reminder['id'], reminder['is_active']
             )
         )
         await callback.answer()
@@ -457,8 +439,11 @@ async def toggle_reminder(callback: CallbackQuery):
         reminder = db.get_reminder(reminder_id)
 
         if not reminder:
-            await callback.answer("❌ Напоминание не найдено", show_alert=True)
+            await callback.answer("❌ Не найдено", show_alert=True)
             return
+
+        user = db.get_user_by_telegram(callback.from_user.id)
+        tz = (user.get('timezone') if user else None) or 'Europe/Moscow'
 
         new_status = not reminder['is_active']
         db.update_reminder(reminder_id, is_active=new_status)
@@ -469,8 +454,9 @@ async def toggle_reminder(callback: CallbackQuery):
                 await reminder_service.schedule_reminder(
                     trainer_id=reminder['trainer_id'],
                     day_of_week=reminder['day_of_week'],
-                    time_str=reminder['time'],   # FIX: уже строка
-                    reminder_id=reminder['id']
+                    time_str=reminder['time'],
+                    reminder_id=reminder['id'],
+                    timezone=tz
                 )
             else:
                 job_id = f"reminder_{reminder['id']}"
@@ -493,7 +479,7 @@ async def delete_reminder(callback: CallbackQuery):
         reminder = db.get_reminder(reminder_id)
 
         if not reminder:
-            await callback.answer("❌ Напоминание не найдено", show_alert=True)
+            await callback.answer("❌ Не найдено", show_alert=True)
             return
 
         reminder_service = get_reminder_service()
@@ -505,13 +491,13 @@ async def delete_reminder(callback: CallbackQuery):
 
         await callback.answer("✅ Напоминание удалено")
         await callback.message.edit_text(
-            "✅ Напоминание успешно удалено.",
-            reply_markup=get_back_inline_keyboard()
+            "✅ Напоминание удалено.",
+            reply_markup=get_back_inline_keyboard("back_to_menu")
         )
 
     except Exception as e:
         logger.error(f"Error in delete_reminder: {e}")
-        await callback.answer("❌ Ошибка при удалении", show_alert=True)
+        await callback.answer("❌ Ошибка", show_alert=True)
 
 
 @router.callback_query(F.data == "back_to_reminders")
@@ -523,15 +509,17 @@ async def back_to_reminders(callback: CallbackQuery):
             return
 
         reminders = db.get_trainer_reminders(user['id'])
+        tz = user.get('timezone') or 'Europe/Moscow'
+
         if not reminders:
             await callback.message.edit_text(
                 "📅 У вас пока нет напоминаний.\n\nНастройте: /set_reminder",
-                reply_markup=get_back_inline_keyboard()
+                reply_markup=get_back_inline_keyboard("back_to_menu")
             )
             await callback.answer()
             return
 
-        response = "📅 <b>Ваши напоминания:</b>\n\n"
+        response = f"📅 <b>Ваши напоминания</b>\n🌍 {tz}\n\n"
         for i, r in enumerate(reminders, 1):
             day_name = get_day_name(r['day_of_week'])
             status = "✅" if r['is_active'] else "⏸️"
@@ -552,9 +540,7 @@ async def back_to_reminders(callback: CallbackQuery):
         )
 
         await callback.message.edit_text(
-            response,
-            parse_mode=ParseMode.HTML,
-            reply_markup=keyboard
+            response, parse_mode=ParseMode.HTML, reply_markup=keyboard
         )
         await callback.answer()
 
