@@ -19,8 +19,8 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from app.config import Config
 from app.handlers import (
     start, client, measurements, stats,
-    reminders, admin, help, menu, reports, profile    
-    # FIX: trainer убран — файл удалён
+    reminders, admin, help, menu, reports,
+    profile
 )
 from app.services.reminder_service import ReminderService
 from app.utils.logger import get_logger
@@ -46,14 +46,11 @@ class FitnessBot:
             logger.error(f"❌ Configuration error: {e}")
             raise
 
-        # FIX: fix_goal_enum() удалён — модель goal = String(50), не Enum
-
         init_db()
         logger.info("✅ Database initialized")
 
         session = AiohttpSession(timeout=120)
 
-        # FIX: DefaultBotProperties — parse_mode HTML по умолчанию
         self.bot = Bot(
             token=Config.BOT_TOKEN,
             session=session,
@@ -65,7 +62,6 @@ class FitnessBot:
         self._setup_routers()
         logger.info("✅ Routers registered")
 
-        # FIX: init_reminder_service ДО start(), чтобы _restore_reminders видел сервис
         self.reminder_service = ReminderService(self.bot)
         init_reminder_service(self.reminder_service)
         await self.reminder_service.start()
@@ -76,24 +72,29 @@ class FitnessBot:
 
         self._setup_signal_handlers()
 
-def _setup_routers(self):
-    routers = [
-        start.router,
-        help.router,
-        profile.router,        
-        measurements.router,
-        client.router,
-        reports.router,
-        stats.router,
-        reminders.router,
-        admin.router,
-        menu.router,
-    ]
-    for router in routers:
-        self.dp.include_router(router)
+    def _setup_routers(self):
+        """
+        Порядок критичен:
+        - reports ДО client (report_select_*)
+        - profile — обычные команды
+        - menu — Reply-кнопки в конце
+        """
+        routers = [
+            start.router,
+            help.router,
+            profile.router,        # /edit_profile, /delete_account
+            measurements.router,
+            client.router,
+            reports.router,
+            stats.router,
+            reminders.router,
+            admin.router,
+            menu.router,
+        ]
+        for router in routers:
+            self.dp.include_router(router)
 
     def _setup_signal_handlers(self):
-        """FIX: loop.add_signal_handler вместо signal.signal."""
         try:
             loop = asyncio.get_event_loop()
             for sig in (signal.SIGINT, signal.SIGTERM):
@@ -103,11 +104,12 @@ def _setup_routers(self):
                 )
             logger.info("✅ Signal handlers installed")
         except NotImplementedError:
-            # Windows не поддерживает add_signal_handler для SIGTERM
             logger.warning("⚠️ loop.add_signal_handler not supported, using signal.signal")
+
             def signal_handler(sig, frame):
                 logger.info(f"Received signal {sig}, stopping bot...")
                 asyncio.create_task(self.shutdown())
+
             signal.signal(signal.SIGINT, signal_handler)
             try:
                 signal.signal(signal.SIGTERM, signal_handler)
@@ -139,7 +141,6 @@ def _setup_routers(self):
             await self.start_web_server()
             logger.info("🚀 Bot started successfully!")
 
-            # FIX: убран my_chat_member (не обрабатывается)
             await self.dp.start_polling(
                 self.bot,
                 allowed_updates=["message", "callback_query"],
