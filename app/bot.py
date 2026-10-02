@@ -19,7 +19,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from app.config import Config
 from app.handlers import (
     start, client, measurements, stats,
-    reminders, admin, help, menu, reports
+    reminders, admin, help, menu, reports, profile    
     # FIX: trainer убран — файл удалён
 )
 from app.services.reminder_service import ReminderService
@@ -76,26 +76,21 @@ class FitnessBot:
 
         self._setup_signal_handlers()
 
-    def _setup_routers(self):
-        """
-        FIX: порядок критичен.
-        - reports ДО client (чтобы report_select_* не перехватился)
-        - menu — в конце (Reply-кнопки)
-        - trainer — удалён
-        """
-        routers = [
-            start.router,          # /start, регистрация, goal
-            help.router,           # /help, /faq
-            measurements.router,   # /set_measurements, /my_progress
-            client.router,         # /add_client, /my_clients, info_, chart_, msg_
-            reports.router,        # /report, /my_report, report_select_*
-            stats.router,          # /stats, stats_select_*, stats_period_*
-            reminders.router,      # /set_reminder, /my_reminders, reminder_*
-            admin.router,          # /admin, admin_*, broadcast_*
-            menu.router,           # Reply-меню — последний
-        ]
-        for router in routers:
-            self.dp.include_router(router)
+def _setup_routers(self):
+    routers = [
+        start.router,
+        help.router,
+        profile.router,        
+        measurements.router,
+        client.router,
+        reports.router,
+        stats.router,
+        reminders.router,
+        admin.router,
+        menu.router,
+    ]
+    for router in routers:
+        self.dp.include_router(router)
 
     def _setup_signal_handlers(self):
         """FIX: loop.add_signal_handler вместо signal.signal."""
