@@ -1,3 +1,4 @@
+# app/services/reminder_service.py
 import asyncio
 from datetime import datetime, timedelta
 from typing import Optional
@@ -17,7 +18,7 @@ logger = get_logger(__name__)
 
 
 class ReminderService:
-    """Сервис для управления напоминаниями"""
+    """Сервис для управления напоминаниями."""
 
     def __init__(self, bot):
         self.bot = bot
@@ -32,7 +33,6 @@ class ReminderService:
         logger.info("✅ ReminderService initialized")
 
     async def start(self):
-        """Запускает планировщик"""
         if self._running:
             logger.warning("ReminderService already running")
             return
@@ -41,7 +41,7 @@ class ReminderService:
 
         self.scheduler = AsyncIOScheduler(
             jobstores=self.jobstores,
-            timezone='Europe/Moscow'
+            timezone='UTC'  # FIX: базовый UTC, для каждого job — своя tz
         )
 
         self.scheduler.add_listener(
@@ -58,7 +58,6 @@ class ReminderService:
         logger.info("✅ ReminderService started")
 
     async def stop(self):
-        """Останавливает планировщик"""
         self._running = False
 
         if self.scheduler:
@@ -75,13 +74,12 @@ class ReminderService:
         logger.info("✅ ReminderService stopped")
 
     def _schedule_cleanup_jobs(self):
-        """Планирует фоновые задачи очистки"""
         if not self.scheduler:
             return
 
         self.scheduler.add_job(
             self.cleanup_logs,
-            trigger=CronTrigger(hour=3, minute=0),
+            trigger=CronTrigger(hour=3, minute=0, timezone='UTC'),
             id='cleanup_logs',
             replace_existing=True,
             misfire_grace_time=3600
@@ -90,7 +88,7 @@ class ReminderService:
 
         self.scheduler.add_job(
             self.check_missing_measurements,
-            trigger=CronTrigger(day_of_week='sun', hour=23, minute=59),
+            trigger=CronTrigger(day_of_week='sun', hour=23, minute=59, timezone='UTC'),
             id='check_missing_measurements',
             replace_existing=True,
             misfire_grace_time=7200
@@ -98,7 +96,7 @@ class ReminderService:
         logger.info("✅ Missing measurements check job scheduled")
 
     async def _restore_reminders(self):
-        """Восстанавливает напоминания из БД при старте"""
+        """Восстанавливает напоминания при старте с правильной таймзоной."""
         try:
             with Session() as session:
                 reminders = session.query(Reminder).filter(
@@ -107,16 +105,26 @@ class ReminderService:
 
                 restored_count = 0
                 for reminder in reminders:
-                    if reminder.day_of_week is not None:
-                        await self.schedule_reminder(
-                            trainer_id=reminder.trainer_id,
-                            day_of_week=reminder.day_of_week,
-                            time_str=reminder.time.strftime("%H:%M"),
-                            reminder_id=reminder.id
-                        )
-                        restored_count += 1
+                    if reminder.day_of_week is None and reminder.time is None:
+                        continue
 
-                logger.info(f"✅ Restored {restored_count} reminders from database")
+                    # FIX: берём таймзону тренера
+                    trainer = session.query(User).filter(
+                        User.id == reminder.trainer_id
+                    ).first()
+                    tz = (trainer.timezone if trainer and trainer.timezone
+                          else "Europe/Moscow")
+
+                    await self.schedule_reminder(
+                        trainer_id=reminder.trainer_id,
+                        day_of_week=reminder.day_of_week,
+                        time_str=reminder.time.strftime("%H:%M"),
+                        reminder_id=reminder.id,
+                        timezone=tz
+                    )
+                    restored_count += 1
+
+                logger.info(f"✅ Restored {restored_count} reminders")
 
         except Exception as e:
             logger.error(f"❌ Failed to restore reminders: {e}")
@@ -126,9 +134,13 @@ class ReminderService:
         trainer_id: int,
         day_of_week: int,
         time_str: str,
-        reminder_id: Optional[int] = None
+        reminder_id: Optional[int] = None,
+        timezone: str = "Europe/Moscow"
     ) -> Optional[str]:
-        """Планирует напоминание для тренера."""
+        """
+        FIX: добавлен параметр timezone.
+        CronTrigger использует timezone для расчёта времени.
+        """
         if not self.scheduler:
             logger.error("Scheduler not running")
             return None
@@ -140,32 +152,33 @@ class ReminderService:
         try:
             parts = time_str.split(':')
             if len(parts) != 2:
-                logger.error(f"Invalid time format: {time_str}, expected HH:MM")
+                logger.error(f"Invalid time format: {time_str}")
                 return None
 
             hour = int(parts[0])
             minute = int(parts[1])
 
             if not (0 <= hour < 24 and 0 <= minute < 60):
-                logger.error(f"Invalid time values: hour={hour}, minute={minute}")
+                logger.error(f"Invalid time: {hour}:{minute}")
                 return None
 
         except ValueError as e:
             logger.error(f"Failed to parse time '{time_str}': {e}")
             return None
 
+        # FIX: используем переданную таймзону
         if day_of_week is not None:
             cron = CronTrigger(
                 day_of_week=day_of_week,
                 hour=hour,
                 minute=minute,
-                timezone='Europe/Moscow'
+                timezone=timezone
             )
         else:
             cron = CronTrigger(
                 hour=hour,
                 minute=minute,
-                timezone='Europe/Moscow'
+                timezone=timezone
             )
 
         job_id = f"reminder_{trainer_id}_{day_of_week if day_of_week is not None else 'daily'}_{hour}_{minute}"
@@ -182,11 +195,13 @@ class ReminderService:
             max_instances=1
         )
 
-        logger.info(f"✅ Reminder scheduled: trainer_id={trainer_id}, time={time_str}, day={day_of_week}")
+        logger.info(
+            f"✅ Reminder scheduled: trainer={trainer_id}, "
+            f"time={time_str}, day={day_of_week}, tz={timezone}"
+        )
         return job_id
 
     async def remove_reminder(self, job_id: str) -> bool:
-        """Удаляет запланированное напоминание."""
         if not self.scheduler:
             return False
 
@@ -199,7 +214,6 @@ class ReminderService:
             return False
 
     async def _send_reminders_to_clients(self, trainer_id: int):
-        """Отправляет напоминания всем клиентам тренера."""
         try:
             logger.info(f"📤 Sending reminders to clients of trainer {trainer_id}")
 
@@ -249,7 +263,7 @@ class ReminderService:
                         await asyncio.sleep(0.5)
 
                     except Exception as e:
-                        logger.error(f"Error sending reminder to client {client.telegram_id}: {e}")
+                        logger.error(f"Error sending reminder to {client.telegram_id}: {e}")
 
                 logger.info(f"✅ Sent {sent_count} reminders for trainer {trainer_id}")
 
@@ -261,11 +275,8 @@ class ReminderService:
         run_time = datetime.now() + timedelta(hours=24)
         job_id = f"followup_{client_id}_{int(run_time.timestamp())}"
 
-        if self.scheduler:
-            try:
-                self.scheduler.remove_job(job_id)
-            except:
-                pass
+        if self.scheduler is None:
+            return
 
         self.scheduler.add_job(
             self._send_followup_reminder,
@@ -275,17 +286,14 @@ class ReminderService:
             replace_existing=True,
             misfire_grace_time=3600
         )
-        logger.debug(f"⏰ Scheduled followup for client {client_id} at {run_time}")
 
     async def _send_followup_reminder(self, client_id: int, trainer_id: int):
-        """Отправляет повторное напоминание клиенту."""
         try:
             logger.info(f"📤 Sending followup to client {client_id}")
 
             with Session() as session:
                 client = session.query(User).filter(User.id == client_id).first()
                 if not client:
-                    logger.error(f"Client {client_id} not found")
                     return
 
                 from app.models import Measurement
@@ -294,11 +302,11 @@ class ReminderService:
                 ).order_by(Measurement.measured_at.desc()).first()
 
                 if last_measurement and (datetime.now() - last_measurement.measured_at) < timedelta(hours=24):
-                    logger.debug(f"Client {client_id} already submitted measurements recently")
+                    logger.debug(f"Client {client_id} already submitted measurements")
                     return
 
                 message = (
-                    "⏰ Повторное напоминание: пожалуйста, пришлите свои замеры через /set_measurements\n\n"
+                    "⏰ Повторное напоминание: пожалуйста, пришлите замеры через /set_measurements\n\n"
                     "📊 Регулярные замеры помогают отслеживать прогресс!"
                 )
 
@@ -315,13 +323,12 @@ class ReminderService:
                 if reminder:
                     self._log_reminder(reminder.id, client_id, is_followup=True)
 
-                logger.info(f"✅ Sent follow-up reminder to client {client_id}")
+                logger.info(f"✅ Sent follow-up to client {client_id}")
 
         except Exception as e:
-            logger.error(f"Error sending follow-up to client {client_id}: {e}")
+            logger.error(f"Error in followup for client {client_id}: {e}")
 
     def _log_reminder(self, reminder_id: int, client_id: int, is_followup: bool = False):
-        """Логирует отправку напоминания в БД."""
         try:
             with Session() as session:
                 log = ReminderLog(
@@ -332,12 +339,10 @@ class ReminderService:
                 )
                 session.add(log)
                 session.commit()
-                logger.debug(f"📝 Reminder logged: reminder_id={reminder_id}, client_id={client_id}")
         except Exception as e:
             logger.error(f"Failed to log reminder: {e}")
 
     async def check_missing_measurements(self):
-        """Проверяет клиентов, которые не отправляли замеры более 7 дней."""
         try:
             logger.info("📊 Checking missing measurements...")
 
@@ -359,7 +364,6 @@ class ReminderService:
                         missing_clients.append(client)
 
                 if not missing_clients:
-                    logger.info("✅ All clients have recent measurements")
                     return
 
                 trainer_groups = {}
@@ -382,7 +386,8 @@ class ReminderService:
                         continue
 
                     message = (
-                        f"📊 Еженедельный отчёт: {len(client_names)} клиентов не отправили замеры за неделю:\n\n"
+                        f"📊 Еженедельный отчёт: {len(client_names)} клиентов "
+                        f"не отправили замеры за неделю:\n\n"
                     )
                     message += "\n".join(f"• {name}" for name in client_names[:10])
                     if len(client_names) > 10:
@@ -394,7 +399,6 @@ class ReminderService:
                             text=message
                         )
                         await asyncio.sleep(0.5)
-                        logger.info(f"📊 Sent missing measurements report to trainer {trainer_id}")
                     except Exception as e:
                         logger.error(f"Error sending report to trainer {trainer_id}: {e}")
 
@@ -402,7 +406,6 @@ class ReminderService:
             logger.error(f"Error in check_missing_measurements: {e}")
 
     async def cleanup_logs(self):
-        """Очищает старые логи"""
         try:
             import os
             from pathlib import Path
@@ -421,7 +424,7 @@ class ReminderService:
                         os.remove(file)
                         removed_count += 1
                     except Exception as e:
-                        logger.error(f"Error removing log file {file}: {e}")
+                        logger.error(f"Error removing {file}: {e}")
 
                 logger.info(f"🧹 Cleaned up {removed_count} old log files")
 
@@ -429,17 +432,7 @@ class ReminderService:
             logger.error(f"Error in cleanup_logs: {e}")
 
     def _on_job_executed(self, event):
-        """Обработчик событий выполнения задач"""
         if event.exception:
             logger.error(f"Job {event.job_id} failed: {event.exception}")
         else:
-            logger.debug(f"Job {event.job_id} executed successfully")
-
-
-# ============================================================
-#  ТЕСТОВАЯ ФУНКЦИЯ ДЛЯ ПРОВЕРКИ
-# ============================================================
-
-async def test_send_reminder(reminder_service, trainer_id: int):
-    """Тестовая отправка напоминания (для отладки)"""
-    await reminder_service._send_reminders_to_clients(trainer_id)
+            logger.debug(f"Job {event.job_id} executed")
