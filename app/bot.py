@@ -87,6 +87,7 @@ class FitnessBot:
             client.router,
             reports.router,
             stats.router,
+            payments.router,
             reminders.router,
             admin.router,
             menu.router,
