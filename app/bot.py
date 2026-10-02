@@ -20,7 +20,8 @@ from app.config import Config
 from app.handlers import (
     start, client, measurements, stats,
     reminders, admin, help, menu, reports,
-    profile
+    profile,
+    payments        # ← ДОЛЖЕН БЫТЬ ЗДЕСЬ
 )
 from app.services.reminder_service import ReminderService
 from app.utils.logger import get_logger
