@@ -34,6 +34,42 @@ class MessageStates(StatesGroup):
 
 
 # ============================================================
+#  ПРОВЕРКА ЛИМИТА FREE-ПЛАНА
+# ============================================================
+
+def _check_client_limit(trainer_id: int) -> tuple:
+    """
+    Проверяет, может ли тренер добавить ещё ученика.
+    Возвращает (можно_ли, причина_если_нет).
+
+    Free: до 3 учеников
+    Pro: безлимит
+    """
+    try:
+        from datetime import datetime
+        sub = db.get_user_subscription(trainer_id)
+        is_pro = sub and sub['is_active'] and sub['expires_at'] > datetime.now()
+
+        if is_pro:
+            return True, ""
+
+        clients = db.get_trainer_clients(trainer_id)
+        FREE_LIMIT = 3
+        if len(clients) >= FREE_LIMIT:
+            return False, (
+                f"❌ <b>Достигнут лимит бесплатных учеников ({FREE_LIMIT})</b>\n\n"
+                f"Оформите Pro-подписку (/pro), чтобы добавлять "
+                f"неограниченное количество учеников."
+            )
+
+        return True, ""
+    except Exception as e:
+        logger.error(f"Error in _check_client_limit: {e}")
+        # Если ошибка — не блокируем
+        return True, ""
+
+
+# ============================================================
 #  /add_client
 # ============================================================
 
@@ -47,6 +83,12 @@ async def add_client(message: Message):
 
         if user['role'] != UserRole.TRAINER.value:
             await message.answer("❌ Эта команда доступна только тренерам.")
+            return
+
+        # Проверка лимита Free-плана
+        allowed, reason = _check_client_limit(user['id'])
+        if not allowed:
+            await message.answer(reason, parse_mode=ParseMode.HTML)
             return
 
         args = message.text.split()
@@ -240,7 +282,7 @@ async def my_clients(message: Message):
             reply_markup=keyboard
         )
 
-        logger.info(f"📋 Trainer {user['id']} viewed clients list: {len(clients)} clients")
+        logger.info(f"📋 Trainer {user['id']} viewed clients: {len(clients)}")
 
     except Exception as e:
         logger.error(f"Error in my_clients: {e}\n{traceback.format_exc()}")
@@ -248,14 +290,12 @@ async def my_clients(message: Message):
 
 
 # ============================================================
-#  НАВИГАЦИЯ ПО СПИСКУ
+#  ПАГИНАЦИЯ
 # ============================================================
 
 @router.callback_query(F.data.startswith("page_"))
 async def page_clients(callback: CallbackQuery):
     try:
-        logger.info(f"📥 [page_] data: {callback.data}")
-        # FIX: новый формат page_{page}_{action}
         parts = callback.data.split("_")
         if len(parts) < 3:
             await callback.answer("❌ Неверный формат", show_alert=True)
@@ -321,7 +361,6 @@ async def back_to_clients(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data.regexp(r"^info_\d+$"))
 async def show_client_info(callback: CallbackQuery):
     try:
-        logger.info(f"📥 [info_] data: {callback.data}")
         client_id = int(callback.data.split("_")[1])
         client = db.get_user(client_id)
 
@@ -487,7 +526,6 @@ async def view_client_chart(callback: CallbackQuery):
 @router.callback_query(F.data.regexp(r"^delete_\d+$"))
 async def confirm_delete_client(callback: CallbackQuery):
     try:
-        # FIX: regexp ^delete_\d+$ — не перехватит delete_reminder_5
         client_id = int(callback.data.split("_")[1])
         client = db.get_user(client_id)
 
@@ -752,6 +790,8 @@ async def cancel_message(callback: CallbackQuery, state: FSMContext):
     except Exception as e:
         logger.error(f"Error in cancel_message: {e}")
         await callback.answer("❌ Ошибка", show_alert=True)
+
+
 # ============================================================
 #  УНИВЕРСАЛЬНЫЙ ВОЗВРАТ В ГЛАВНОЕ МЕНЮ
 # ============================================================
@@ -772,13 +812,11 @@ async def back_to_menu_universal(callback: CallbackQuery, state: FSMContext):
             get_client_menu_keyboard
         )
 
-        # Удаляем inline-сообщение
         try:
             await callback.message.delete()
         except Exception:
             pass
 
-        # Отправляем новое с Reply-меню
         if user['role'] == UserRole.TRAINER.value:
             await callback.message.answer(
                 f"👋 <b>Главное меню тренера</b>\n\n"
@@ -800,10 +838,6 @@ async def back_to_menu_universal(callback: CallbackQuery, state: FSMContext):
         logger.error(f"Error in back_to_menu_universal: {e}\n{traceback.format_exc()}")
         await callback.answer("❌ Ошибка", show_alert=True)
 
-
-# ============================================================
-#  ВОЗВРАТ В АДМИН-ПАНЕЛЬ
-# ============================================================
 
 @router.callback_query(F.data == "back_to_admin")
 async def back_to_admin_universal(callback: CallbackQuery):
