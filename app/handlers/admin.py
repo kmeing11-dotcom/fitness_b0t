@@ -497,3 +497,74 @@ async def test_digest_all(message: Message):
     except Exception as e:
         logger.error(f"Error in test_digest_all: {e}\n{traceback.format_exc()}")
         await message.answer(f"❌ Ошибка: {str(e)[:200]}")
+
+
+# ============================================================
+#  РАСШИРЕННАЯ АНАЛИТИКА
+# ============================================================
+
+@router.callback_query(F.data == "admin_analytics")
+async def admin_analytics_callback(callback: CallbackQuery):
+    """Расширенная аналитика."""
+    try:
+        if not is_admin(callback.from_user.id):
+            await callback.answer("❌ Доступ запрещён.", show_alert=True)
+            return
+
+        from app.services.analytics_service import AnalyticsService
+
+        stats = AnalyticsService.get_full_stats()
+
+        if not stats:
+            await callback.message.edit_text(
+                "❌ Не удалось получить статистику.",
+                reply_markup=get_admin_keyboard()
+            )
+            await callback.answer()
+            return
+
+        text = AnalyticsService.format_stats_for_telegram(stats)
+
+        await callback.message.edit_text(
+            text,
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_admin_keyboard()
+        )
+        await callback.answer()
+
+        logger.info(f"📈 Analytics viewed by {callback.from_user.id}")
+
+    except Exception as e:
+        logger.error(f"Error in admin_analytics_callback: {e}\n{traceback.format_exc()}")
+        await callback.answer("❌ Ошибка", show_alert=True)
+
+
+# ============================================================
+#  КОМАНДА /analytics
+# ============================================================
+
+@router.message(Command("analytics"))
+async def cmd_analytics(message: Message):
+    """Аналитика по команде."""
+    try:
+        if not is_admin(message.from_user.id):
+            await message.answer("❌ Доступ запрещён.")
+            return
+
+        from app.services.analytics_service import AnalyticsService
+
+        stats = AnalyticsService.get_full_stats()
+
+        if not stats:
+            await message.answer("❌ Не удалось получить статистику.")
+            return
+
+        text = AnalyticsService.format_stats_for_telegram(stats)
+
+        await message.answer(text, parse_mode=ParseMode.HTML)
+
+        logger.info(f"📈 Analytics command by {message.from_user.id}")
+
+    except Exception as e:
+        logger.error(f"Error in cmd_analytics: {e}\n{traceback.format_exc()}")
+        await message.answer("❌ Ошибка.")
