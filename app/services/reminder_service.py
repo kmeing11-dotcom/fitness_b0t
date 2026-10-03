@@ -55,6 +55,9 @@ class ReminderService:
 
         await self._restore_reminders()
 
+        # FIX: планируем weekly-дайджест каждому тренеру по его таймзоне
+        await self._schedule_weekly_digests_per_trainer()
+
         logger.info("✅ ReminderService started")
 
     async def stop(self):
@@ -77,7 +80,7 @@ class ReminderService:
         if not self.scheduler:
             return
 
-        # Чистка логов в 3:00 UTC
+        # Чистка логов 3:00 UTC
         self.scheduler.add_job(
             self.cleanup_logs,
             trigger=CronTrigger(hour=3, minute=0, timezone='UTC'),
@@ -86,7 +89,7 @@ class ReminderService:
             misfire_grace_time=3600
         )
 
-        # Проверка «молчунов» в воскресенье 23:59
+        # Проверка «молчунов» воскресенье 23:59 UTC
         self.scheduler.add_job(
             self.check_missing_measurements,
             trigger=CronTrigger(day_of_week='sun', hour=23, minute=59, timezone='UTC'),
@@ -95,7 +98,7 @@ class ReminderService:
             misfire_grace_time=7200
         )
 
-        # Проверка истекающих подписок каждый день в 12:00 UTC
+        # Проверка подписок 12:00 UTC
         self.scheduler.add_job(
             self.check_expiring_subscriptions,
             trigger=CronTrigger(hour=12, minute=0, timezone='UTC'),
@@ -104,31 +107,83 @@ class ReminderService:
             misfire_grace_time=3600
         )
 
-        # FIX: Weekly-дайджест — суббота 20:30 UTC (для теста)
+        logger.info("✅ Cleanup, missing, subscriptions jobs scheduled")
+
+    # ============================================================
+    #  WEEKLY ДАЙДЖЕСТ (per-trainer по таймзоне)
+    # ============================================================
+
+    async def _schedule_weekly_digests_per_trainer(self):
+        """
+        Планирует дайджест каждому активному тренеру
+        на воскресенье 19:00 по ЕГО таймзоне.
+        """
+        try:
+            with Session() as session:
+                trainers = session.query(User).filter(
+                    User.role == UserRole.TRAINER,
+                    User.is_active == True
+                ).all()
+
+                trainer_data = [
+                    (t.id, t.telegram_id, t.timezone or "Europe/Moscow")
+                    for t in trainers
+                ]
+
+            scheduled = 0
+            for trainer_id, chat_id, tz in trainer_data:
+                self.schedule_digest_for_trainer(trainer_id, chat_id, tz)
+                scheduled += 1
+
+            logger.info(f"✅ Weekly digests scheduled for {scheduled} trainers (per timezone)")
+
+        except Exception as e:
+            logger.error(f"Error in _schedule_weekly_digests_per_trainer: {e}\n{traceback.format_exc()}")
+
+    def schedule_digest_for_trainer(self, trainer_id: int, chat_id: int, timezone: str = "Europe/Moscow"):
+        """
+        Планирует/перепланирует weekly-дайджест для одного тренера.
+        Вызывается:
+        - при старте бота (_schedule_weekly_digests_per_trainer)
+        - при регистрации нового тренера (start.py)
+        """
+        if not self.scheduler:
+            logger.warning("Scheduler not ready — cannot schedule digest")
+            return
+
+        from app.services.digest_service import DigestService
+
+        job_id = f"digest_{trainer_id}"
+
         self.scheduler.add_job(
-            self.send_weekly_digests,
-            trigger=CronTrigger(day_of_week='sat', hour=20, minute=30, timezone='UTC'),
-            id='weekly_digests',
+            DigestService.send_digest_to_one_trainer,
+            trigger=CronTrigger(
+                day_of_week='sun',  # воскресенье
+                hour=19,            # 19:00
+                minute=0,
+                timezone=timezone
+            ),
+            args=[self.bot, trainer_id, chat_id],
+            id=job_id,
             replace_existing=True,
-            misfire_grace_time=3600
+            misfire_grace_time=7200
         )
 
-        logger.info("✅ Cleanup, missing, subscriptions, digests jobs scheduled")
+        logger.info(f"📅 Digest scheduled: trainer={trainer_id}, tz={timezone}, Вс 19:00")
 
-    # ============================================================
-    #  WEEKLY ДАЙДЖЕСТ
-    # ============================================================
-
-    async def send_weekly_digests(self):
-        """Отправляет еженедельный дайджест всем активным тренерам."""
+    def remove_digest_for_trainer(self, trainer_id: int):
+        """Удаляет job дайджеста (если тренер удалён или отключён)."""
+        if not self.scheduler:
+            return
+        job_id = f"digest_{trainer_id}"
         try:
-            from app.services.digest_service import DigestService
-            await DigestService.send_digests_to_all_trainers(self.bot)
-        except Exception as e:
-            logger.error(f"Error in send_weekly_digests: {e}\n{traceback.format_exc()}")
+            self.scheduler.remove_job(job_id)
+            logger.info(f"🗑️ Digest job removed: {job_id}")
+        except Exception:
+            pass
 
     # ============================================================
-    #  ПРОВЕРКА ПОДПИСОК
+    #  ПОДПИСКИ
     # ============================================================
 
     async def check_expiring_subscriptions(self):
@@ -184,7 +239,7 @@ class ReminderService:
                             pass
 
                 session.commit()
-                logger.info(f"💎 Subs check: notified={notified}, deactivated={deactivated}")
+                logger.info(f"💎 Subs: notified={notified}, deactivated={deactivated}")
 
         except Exception as e:
             logger.error(f"Error in check_expiring_subscriptions: {e}\n{traceback.format_exc()}")
