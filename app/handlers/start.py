@@ -28,6 +28,10 @@ router = Router()
 db = DatabaseService()
 
 
+# ============================================================
+#  СПИСОК РЕГИОНОВ
+# ============================================================
+
 TIMEZONE_CHOICES = [
     ("Europe/Kaliningrad", "Калининград (UTC+2)"),
     ("Europe/Moscow", "Москва (UTC+3)"),
@@ -73,6 +77,10 @@ def get_timezone_keyboard(page: int = 0) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
 
+# ============================================================
+#  FSM
+# ============================================================
+
 class RegistrationStates(StatesGroup):
     choosing_role = State()
     trainer_name = State()
@@ -86,13 +94,12 @@ class RegistrationStates(StatesGroup):
 
 
 # ============================================================
-#  /start (с обработкой invite-ссылок)
+#  /start (с invite-ссылками)
 # ============================================================
 
 @router.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
     try:
-        # FIX: обработка deep-link /start inv_TOKEN
         args = message.text.split()
         invite_token = None
 
@@ -116,7 +123,6 @@ async def cmd_start(message: Message, state: FSMContext):
                 )
                 return
 
-            # Если пользователь не зарегистрирован — просим зарегистрироваться
             if not user:
                 await state.update_data(pending_invite=trainer['id'])
                 await message.answer(
@@ -128,7 +134,6 @@ async def cmd_start(message: Message, state: FSMContext):
                 await state.set_state(RegistrationStates.choosing_role)
                 return
 
-            # Если уже тренер — нельзя
             if user['role'] != UserRole.CLIENT.value:
                 await message.answer(
                     "❌ Приглашение только для учеников.\n"
@@ -136,7 +141,6 @@ async def cmd_start(message: Message, state: FSMContext):
                 )
                 return
 
-            # Проверяем, не привязан ли уже
             existing_clients = db.get_trainer_clients(trainer['id'])
             if user['id'] in [c['id'] for c in existing_clients]:
                 await message.answer(
@@ -146,7 +150,6 @@ async def cmd_start(message: Message, state: FSMContext):
                 )
                 return
 
-            # Привязываем
             success = db.add_client_to_trainer(trainer['id'], user['id'])
 
             if success:
@@ -175,9 +178,7 @@ async def cmd_start(message: Message, state: FSMContext):
 
                 logger.info(f"✅ Client {user['id']} linked to trainer {trainer['id']} via invite")
             else:
-                await message.answer(
-                    "❌ Не удалось привязаться. Попробуйте позже."
-                )
+                await message.answer("❌ Не удалось привязаться. Попробуйте позже.")
             return
 
         # ============================================================
@@ -241,6 +242,10 @@ async def register_client(message: Message, state: FSMContext):
         await message.answer("❌ Ошибка.")
 
 
+# ============================================================
+#  ОБЩАЯ ОТМЕНА
+# ============================================================
+
 @router.message(
     StateFilter(
         RegistrationStates.trainer_name,
@@ -260,7 +265,7 @@ async def cancel_registration_any_step(message: Message, state: FSMContext):
 
 
 # ============================================================
-#  ТРЕНЕР
+#  РЕГИСТРАЦИЯ ТРЕНЕРА
 # ============================================================
 
 @router.message(StateFilter(RegistrationStates.trainer_name))
@@ -312,7 +317,7 @@ async def process_trainer_studio(message: Message, state: FSMContext):
 
         await message.answer(
             "🌍 <b>Выберите ваш часовой пояс</b>\n\n"
-            "Это важно: напоминания ученикам будут приходить "
+            "Это важно: напоминания и отчёты будут приходить "
             "по выбранному вами времени.",
             parse_mode=ParseMode.HTML,
             reply_markup=get_timezone_keyboard(page=0)
@@ -367,7 +372,25 @@ async def process_trainer_timezone(callback: CallbackQuery, state: FSMContext):
             await state.clear()
             return
 
+        # Автотриал 7 дней
         trial_given = give_trial(user['id'], days=7)
+
+        # FIX: планируем weekly-дайджест новому тренеру
+        try:
+            from app.handlers.reminders import get_reminder_service
+            reminder_service = get_reminder_service()
+            if reminder_service:
+                reminder_service.schedule_digest_for_trainer(
+                    trainer_id=user['id'],
+                    chat_id=user['telegram_id'],
+                    timezone=timezone
+                )
+                logger.info(f"📅 Digest scheduled for new trainer {user['id']}")
+            else:
+                logger.warning(f"ReminderService not available for digest scheduling")
+        except Exception as e:
+            logger.warning(f"Could not schedule digest: {e}")
+
         tz_label = dict(TIMEZONE_CHOICES).get(timezone, timezone)
 
         trial_text = ""
@@ -405,7 +428,7 @@ async def process_trainer_timezone(callback: CallbackQuery, state: FSMContext):
 
 
 # ============================================================
-#  УЧЕНИК
+#  РЕГИСТРАЦИЯ УЧЕНИКА
 # ============================================================
 
 @router.message(StateFilter(RegistrationStates.client_name))
@@ -535,7 +558,6 @@ async def _finish_client_registration(
             await callback.answer()
             return
 
-        # FIX: проверяем pending_invite
         pending_invite = data.get('pending_invite')
         invite_msg = ""
 
@@ -586,6 +608,10 @@ async def _finish_client_registration(
         await state.clear()
         await callback.answer("❌ Ошибка", show_alert=True)
 
+
+# ============================================================
+#  /myid
+# ============================================================
 
 @router.message(Command("myid"))
 async def cmd_myid(message: Message):
