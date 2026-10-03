@@ -18,7 +18,7 @@ logger = get_logger(__name__)
 
 
 class ReminderService:
-    """Сервис для управления напоминаниями."""
+    """Сервис для управления напоминаниями и фоновыми задачами."""
 
     def __init__(self, bot):
         self.bot = bot
@@ -86,7 +86,7 @@ class ReminderService:
             misfire_grace_time=3600
         )
 
-        # Проверка «молчунов» в воскресенье
+        # Проверка «молчунов» в воскресенье 23:59
         self.scheduler.add_job(
             self.check_missing_measurements,
             trigger=CronTrigger(day_of_week='sun', hour=23, minute=59, timezone='UTC'),
@@ -95,7 +95,7 @@ class ReminderService:
             misfire_grace_time=7200
         )
 
-        # FIX: проверка истекающих подписок каждый день в 12:00 UTC
+        # Проверка истекающих подписок каждый день в 12:00 UTC
         self.scheduler.add_job(
             self.check_expiring_subscriptions,
             trigger=CronTrigger(hour=12, minute=0, timezone='UTC'),
@@ -104,18 +104,34 @@ class ReminderService:
             misfire_grace_time=3600
         )
 
-        logger.info("✅ Cleanup, missing measurements, subscriptions jobs scheduled")
+        # FIX: Weekly-дайджест — суббота 20:30 UTC (для теста)
+        self.scheduler.add_job(
+            self.send_weekly_digests,
+            trigger=CronTrigger(day_of_week='sat', hour=20, minute=30, timezone='UTC'),
+            id='weekly_digests',
+            replace_existing=True,
+            misfire_grace_time=3600
+        )
+
+        logger.info("✅ Cleanup, missing, subscriptions, digests jobs scheduled")
+
+    # ============================================================
+    #  WEEKLY ДАЙДЖЕСТ
+    # ============================================================
+
+    async def send_weekly_digests(self):
+        """Отправляет еженедельный дайджест всем активным тренерам."""
+        try:
+            from app.services.digest_service import DigestService
+            await DigestService.send_digests_to_all_trainers(self.bot)
+        except Exception as e:
+            logger.error(f"Error in send_weekly_digests: {e}\n{traceback.format_exc()}")
 
     # ============================================================
     #  ПРОВЕРКА ПОДПИСОК
     # ============================================================
 
     async def check_expiring_subscriptions(self):
-        """
-        Каждый день в 12:00 UTC:
-        - За 1 день до конца — напоминание «продлить»
-        - Просрочена — уведомление о переходе на Free + деактивация
-        """
         try:
             logger.info("💎 Checking expiring subscriptions...")
 
@@ -135,7 +151,6 @@ class ReminderService:
 
                     days_left = (sub.expires_at - datetime.now()).days
 
-                    # За 1 день — напоминание
                     if days_left == 1:
                         try:
                             await self.bot.send_message(
@@ -143,20 +158,15 @@ class ReminderService:
                                 text=(
                                     f"⏰ <b>Ваша Pro-подписка закончится завтра</b>\n\n"
                                     f"📅 Дата: {sub.expires_at.strftime('%d.%m.%Y')}\n\n"
-                                    f"<b>Чтобы сохранить доступ:</b>\n"
-                                    f"• Безлимит учеников\n"
-                                    f"• PDF-отчёты\n"
-                                    f"• Напоминания\n\n"
-                                    f"Продлите подписку: /pro"
+                                    f"Чтобы сохранить доступ — продлите: /pro"
                                 ),
                                 parse_mode='HTML'
                             )
                             notified += 1
                             await asyncio.sleep(0.3)
                         except Exception as e:
-                            logger.warning(f"Failed to notify {user.telegram_id}: {e}")
+                            logger.warning(f"Notify fail {user.telegram_id}: {e}")
 
-                    # Просрочена — деактивируем
                     elif days_left <= 0:
                         sub.is_active = False
                         deactivated += 1
@@ -165,11 +175,7 @@ class ReminderService:
                                 chat_id=user.telegram_id,
                                 text=(
                                     f"❌ <b>Pro-подписка закончилась</b>\n\n"
-                                    f"Вы перешли на Free-план:\n"
-                                    f"• До 3 учеников\n"
-                                    f"• Без PDF-отчётов\n"
-                                    f"• Без напоминаний\n\n"
-                                    f"Оформить Pro заново: /pro"
+                                    f"Вы на Free-плане. Продлить: /pro"
                                 ),
                                 parse_mode='HTML'
                             )
@@ -178,11 +184,7 @@ class ReminderService:
                             pass
 
                 session.commit()
-
-                logger.info(
-                    f"💎 Subscriptions check done: "
-                    f"notified={notified}, deactivated={deactivated}"
-                )
+                logger.info(f"💎 Subs check: notified={notified}, deactivated={deactivated}")
 
         except Exception as e:
             logger.error(f"Error in check_expiring_subscriptions: {e}\n{traceback.format_exc()}")
@@ -198,7 +200,7 @@ class ReminderService:
                     Reminder.is_active == True
                 ).all()
 
-                restored_count = 0
+                restored = 0
                 for reminder in reminders:
                     if reminder.day_of_week is None and reminder.time is None:
                         continue
@@ -216,9 +218,9 @@ class ReminderService:
                         reminder_id=reminder.id,
                         timezone=tz
                     )
-                    restored_count += 1
+                    restored += 1
 
-                logger.info(f"✅ Restored {restored_count} reminders")
+                logger.info(f"✅ Restored {restored} reminders")
 
         except Exception as e:
             logger.error(f"❌ Failed to restore reminders: {e}")
@@ -233,7 +235,6 @@ class ReminderService:
     ) -> Optional[str]:
         if not self.scheduler:
             return None
-
         if not time_str:
             return None
 
@@ -241,35 +242,26 @@ class ReminderService:
             parts = time_str.split(':')
             if len(parts) != 2:
                 return None
-
             hour = int(parts[0])
             minute = int(parts[1])
-
             if not (0 <= hour < 24 and 0 <= minute < 60):
                 return None
-
         except ValueError:
             return None
 
         if day_of_week is not None:
             cron = CronTrigger(
-                day_of_week=day_of_week,
-                hour=hour,
-                minute=minute,
+                day_of_week=day_of_week, hour=hour, minute=minute,
                 timezone=timezone
             )
         else:
-            cron = CronTrigger(
-                hour=hour,
-                minute=minute,
-                timezone=timezone
-            )
+            cron = CronTrigger(hour=hour, minute=minute, timezone=timezone)
 
         job_id = f"reminder_{trainer_id}_{day_of_week if day_of_week is not None else 'daily'}_{hour}_{minute}"
         if reminder_id:
             job_id = f"reminder_{reminder_id}"
 
-        job = self.scheduler.add_job(
+        self.scheduler.add_job(
             self._send_reminders_to_clients,
             trigger=cron,
             args=[trainer_id],
@@ -279,10 +271,7 @@ class ReminderService:
             max_instances=1
         )
 
-        logger.info(
-            f"✅ Reminder scheduled: trainer={trainer_id}, "
-            f"time={time_str}, day={day_of_week}, tz={timezone}"
-        )
+        logger.info(f"✅ Reminder scheduled: trainer={trainer_id}, time={time_str}, tz={timezone}")
         return job_id
 
     async def remove_reminder(self, job_id: str) -> bool:
@@ -318,10 +307,10 @@ class ReminderService:
 
                 message = (
                     "⏰ Напоминание: пришлите свои замеры через /set_measurements\n\n"
-                    "📝 Чтобы отслеживать прогресс, важно заполнять замеры регулярно!"
+                    "📝 Регулярные замеры помогают отслеживать прогресс!"
                 )
 
-                sent_count = 0
+                sent = 0
                 for tc in trainer_clients:
                     client = tc.client
                     try:
@@ -329,18 +318,15 @@ class ReminderService:
                             chat_id=client.telegram_id,
                             text=message
                         )
-                        sent_count += 1
-
+                        sent += 1
                         if reminder:
                             self._log_reminder(reminder.id, client.id, is_followup=False)
-
                         await self._schedule_followup(client.id, trainer_id)
                         await asyncio.sleep(0.5)
-
                     except Exception as e:
-                        logger.error(f"Error sending to {client.telegram_id}: {e}")
+                        logger.error(f"Send error to {client.telegram_id}: {e}")
 
-                logger.info(f"✅ Sent {sent_count} reminders for trainer {trainer_id}")
+                logger.info(f"✅ Sent {sent} reminders for trainer {trainer_id}")
 
         except Exception as e:
             logger.error(f"Error in _send_reminders_to_clients: {e}")
@@ -348,10 +334,8 @@ class ReminderService:
     async def _schedule_followup(self, client_id: int, trainer_id: int):
         run_time = datetime.now() + timedelta(hours=24)
         job_id = f"followup_{client_id}_{int(run_time.timestamp())}"
-
         if self.scheduler is None:
             return
-
         self.scheduler.add_job(
             self._send_followup_reminder,
             trigger=DateTrigger(run_date=run_time),
@@ -379,8 +363,7 @@ class ReminderService:
                 await self.bot.send_message(
                     chat_id=client.telegram_id,
                     text=(
-                        "⏰ Повторное напоминание: пришлите замеры через /set_measurements\n\n"
-                        "📊 Регулярные замеры помогают отслеживать прогресс!"
+                        "⏰ Повторное напоминание: пришлите замеры через /set_measurements"
                     )
                 )
 
@@ -419,25 +402,24 @@ class ReminderService:
                     User.is_active == True
                 ).all()
 
-                missing_clients = []
+                missing = []
                 for client in clients:
                     last = session.query(Measurement).filter(
                         Measurement.user_id == client.id
                     ).order_by(Measurement.measured_at.desc()).first()
 
                     if not last or (datetime.now() - last.measured_at) > timedelta(days=7):
-                        missing_clients.append(client)
+                        missing.append(client)
 
-                if not missing_clients:
+                if not missing:
                     return
 
                 trainer_groups = {}
-                for client in missing_clients:
+                for client in missing:
                     relations = session.query(TrainerClient).filter(
                         TrainerClient.client_id == client.id,
                         TrainerClient.is_active == True
                     ).all()
-
                     for rel in relations:
                         if rel.trainer_id not in trainer_groups:
                             trainer_groups[rel.trainer_id] = []
@@ -450,25 +432,21 @@ class ReminderService:
                     if not trainer:
                         continue
 
-                    message = (
-                        f"📊 Еженедельный отчёт: {len(names)} клиентов "
-                        f"не отправили замеры за неделю:\n\n"
-                    )
-                    message += "\n".join(f"• {n}" for n in names[:10])
+                    msg = f"📊 {len(names)} клиентов не отправили замеры за неделю:\n\n"
+                    msg += "\n".join(f"• {n}" for n in names[:10])
                     if len(names) > 10:
-                        message += f"\n\n... и ещё {len(names) - 10}"
+                        msg += f"\n\n... и ещё {len(names) - 10}"
 
                     try:
                         await self.bot.send_message(
-                            chat_id=trainer.telegram_id,
-                            text=message
+                            chat_id=trainer.telegram_id, text=msg
                         )
                         await asyncio.sleep(0.5)
                     except Exception as e:
                         logger.error(f"Error to trainer {trainer_id}: {e}")
 
         except Exception as e:
-            logger.error(f"Error in check_missing_measurements: {e}")
+            logger.error(f"Error in check_missing: {e}")
 
     async def cleanup_logs(self):
         try:
