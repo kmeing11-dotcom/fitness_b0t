@@ -11,7 +11,6 @@ logger = get_logger(__name__)
 class Database:
     """
     Единый источник engine и session для всего проекта.
-    DatabaseService и ReminderService используют ЭТОТ engine.
     """
     _engine = None
     _session_factory = None
@@ -51,14 +50,14 @@ class Database:
 
     @classmethod
     def get_session(cls):
-        """scoped_session для ORM-операций (reminder_service)."""
+        """scoped_session для ORM-операций."""
         if cls._scoped_session is None:
             cls._scoped_session = scoped_session(cls.get_session_factory())
         return cls._scoped_session
 
     @classmethod
     def get_raw_session(cls):
-        """Обычная session (не scoped) — для db_service."""
+        """Обычная session (не scoped)."""
         return cls.get_session_factory()()
 
     @classmethod
@@ -73,25 +72,29 @@ class Database:
             logger.error(f"❌ Failed to create tables: {e}")
             raise
 
-@classmethod
-def _run_migrations(cls):
-    migrations = [
-        # users.invite_token
-        "ALTER TABLE users ADD COLUMN IF NOT EXISTS invite_token VARCHAR(32)",
-        "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_invite_token ON users(invite_token)",
-        # subscriptions.is_trial
-        "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS is_trial BOOLEAN DEFAULT FALSE",  # ← НОВОЕ
-    ]
+    @classmethod
+    def _run_migrations(cls):
+        """
+        Добавляет недостающие колонки в существующие таблицы.
+        Безопасно запускать много раз — IF NOT EXISTS.
+        """
+        migrations = [
+            # users.invite_token
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS invite_token VARCHAR(32)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_invite_token ON users(invite_token)",
+            # subscriptions.is_trial
+            "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS is_trial BOOLEAN DEFAULT FALSE",
+        ]
 
-    with cls.get_engine().connect() as conn:
-        for sql in migrations:
-            try:
-                conn.execute(text(sql))
-                conn.commit()
-            except Exception as e:
-                logger.debug(f"Migration skipped: {sql[:60]}... ({e})")
+        with cls.get_engine().connect() as conn:
+            for sql in migrations:
+                try:
+                    conn.execute(text(sql))
+                    conn.commit()
+                except Exception as e:
+                    logger.debug(f"Migration skipped: {sql[:60]}... ({e})")
 
-    logger.info("✅ Migrations applied")
+        logger.info("✅ Migrations applied")
 
     @classmethod
     def drop_db(cls):
@@ -109,7 +112,7 @@ def _run_migrations(cls):
 
 
 # ============================================================
-#  МОДУЛЬНЫЕ ОБЁРТКИ (для обратной совместимости)
+#  МОДУЛЬНЫЕ ОБЁРТКИ
 # ============================================================
 
 def get_engine():
