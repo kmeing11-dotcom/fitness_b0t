@@ -195,6 +195,7 @@ class Subscription(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
     plan = Column(Enum(SubscriptionPlan, name="subscriptionplan"), nullable=False, default=SubscriptionPlan.FREE)
     expires_at = Column(DateTime, nullable=False)
+    is_trial = Column(Boolean, default=False)  
     created_at = Column(DateTime, server_default=func.now())
     is_active = Column(Boolean, default=True)
 
