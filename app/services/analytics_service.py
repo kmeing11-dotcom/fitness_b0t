@@ -1,7 +1,7 @@
 # app/services/analytics_service.py
 from datetime import datetime, timedelta
 from app.db import Session
-from app.models import User, UserRole, TrainerClient, Measurement, Subscription
+from app.models import User, UserRole, TrainerClient, Subscription
 from app.utils.logger import get_logger
 import traceback
 
@@ -9,19 +9,9 @@ logger = get_logger(__name__)
 
 
 class AnalyticsService:
-    """Расширенная аналитика для админа."""
 
     @staticmethod
     def get_full_stats() -> dict:
-        """
-        Возвращает полный срез по системе:
-        - пользователи
-        - подписки
-        - выручка
-        - регистрации
-        - топ тренеров
-        - требуют внимания
-        """
         try:
             with Session() as session:
                 now = datetime.now()
@@ -38,65 +28,70 @@ class AnalyticsService:
                 ).count()
 
                 # ==================== ПОДПИСКИ ====================
-                pro_active = session.query(Subscription).filter(
+                # Активные Pro-подписки
+                active_subs = session.query(Subscription).filter(
                     Subscription.is_active == True,
                     Subscription.expires_at > now
-                ).count()
+                ).all()
 
-                # Триалы = Pro-подписки, которые скоро закончатся И созданы < 8 дней назад
-                # Проще: считаем Pro-подписки, у которых осталось <= 7 дней
-                trial_like = session.query(Subscription).filter(
-                    Subscription.is_active == True,
-                    Subscription.expires_at > now,
-                    Subscription.expires_at <= now + timedelta(days=7)
-                ).count()
+                # Разделяем: триалы vs платные
+                pro_paid = 0
+                pro_trial = 0
+                expiring_soon = []
 
-                free_count = trainers - pro_active
+                for s in active_subs:
+                    is_trial = getattr(s, 'is_trial', False)
+
+                    if is_trial:
+                        pro_trial += 1
+                    else:
+                        pro_paid += 1
+
+                    # Скоро закончатся (в течение 3 дней)
+                    days_left = (s.expires_at - now).days
+                    if 0 <= days_left <= 3:
+                        u = session.query(User).filter(User.id == s.user_id).first()
+                        if u:
+                            expiring_soon.append({
+                                'name': u.full_name or u.username or f"ID{u.id}",
+                                'days': days_left,
+                                'is_trial': is_trial
+                            })
+
+                free_count = trainers - pro_paid - pro_trial
                 if free_count < 0:
                     free_count = 0
 
-                # Конверсия
+                # Конверсия Free → Pro (без триалов)
                 conversion = 0.0
                 if trainers > 0:
-                    conversion = round((pro_active / trainers) * 100, 1)
+                    conversion = round((pro_paid / trainers) * 100, 1)
 
                 # ==================== ВЫРУЧКА ====================
-                # Считаем по подпискам: каждая месячная = 299 ⭐️, годовая = 2990 ⭐️
-                # Приблизительная оценка
-                # В реальности нужна таблица payments, но у нас её нет
-                # Поэтому оцениваем: pro_active × средняя цена
-
-                # Активные продления за последние 30 дней
-                recent_subs = session.query(Subscription).filter(
-                    Subscription.created_at >= month_ago
+                # Только платные подписки (is_trial=False)
+                paid_subs = session.query(Subscription).filter(
+                    Subscription.is_trial == False
                 ).all()
 
-                revenue_30d = 0
-                for s in recent_subs:
-                    # Если expires_at - created_at > 100 дней — это годовой
-                    if s.expires_at and s.created_at:
-                        duration_days = (s.expires_at - s.created_at).days
-                        if duration_days > 100:
-                            revenue_30d += 2990
-                        else:
-                            revenue_30d += 299
-
-                # Общая выручка (по всем подпискам за всё время)
-                all_subs = session.query(Subscription).all()
                 revenue_total = 0
-                for s in all_subs:
-                    if s.expires_at and s.created_at:
-                        duration_days = (s.expires_at - s.created_at).days
-                        if duration_days > 100:
-                            revenue_total += 2990
-                        else:
-                            revenue_total += 299
+                revenue_30d = 0
+
+                for s in paid_subs:
+                    if not s.expires_at or not s.created_at:
+                        continue
+
+                    duration_days = (s.expires_at - s.created_at).days
+                    price = 2990 if duration_days > 100 else 299
+
+                    revenue_total += price
+
+                    if s.created_at >= month_ago:
+                        revenue_30d += price
 
                 # ==================== РЕГИСТРАЦИИ ====================
                 reg_7d = session.query(User).filter(
                     User.created_at >= week_ago
                 ).count()
-
                 reg_30d = session.query(User).filter(
                     User.created_at >= month_ago
                 ).count()
@@ -112,7 +107,6 @@ class AnalyticsService:
                         TrainerClient.trainer_id == t.id,
                         TrainerClient.is_active == True
                     ).count()
-
                     if count > 0:
                         top_trainers.append({
                             'name': t.full_name or t.username or f"ID{t.id}",
@@ -122,36 +116,12 @@ class AnalyticsService:
                 top_trainers.sort(key=lambda x: x['clients'], reverse=True)
                 top_trainers = top_trainers[:5]
 
-                # ==================== ТРЕБУЮТ ВНИМАНИЯ ====================
-                expiring_soon = []
-                # Pro-подписки, которые закончатся в течение 3 дней
-                expiring_subs = session.query(Subscription).filter(
-                    Subscription.is_active == True,
-                    Subscription.expires_at > now,
-                    Subscription.expires_at <= now + timedelta(days=3)
-                ).all()
-
-                for s in expiring_subs:
-                    u = session.query(User).filter(User.id == s.user_id).first()
-                    if u:
-                        days_left = (s.expires_at - now).days
-                        expiring_soon.append({
-                            'name': u.full_name or u.username or f"ID{u.id}",
-                            'days': days_left
-                        })
-
-                # Тренеры без активности > 14 дней
-                inactive_trainers = []
-                # Простая эвристика: тренеры без новых замеров учеников за 14 дней
-                # (в идеале надо last_seen, но его нет)
-
-                # ==================== ИТОГ ====================
                 return {
                     'total_users': total_users,
                     'trainers': trainers,
                     'clients': clients,
-                    'pro_active': pro_active,
-                    'trial_like': trial_like,
+                    'pro_paid': pro_paid,
+                    'pro_trial': pro_trial,
                     'free_count': free_count,
                     'conversion': conversion,
                     'revenue_total': revenue_total,
@@ -159,8 +129,7 @@ class AnalyticsService:
                     'reg_7d': reg_7d,
                     'reg_30d': reg_30d,
                     'top_trainers': top_trainers,
-                    'expiring_soon': expiring_soon,
-                    'inactive_trainers': inactive_trainers
+                    'expiring_soon': expiring_soon
                 }
 
         except Exception as e:
@@ -169,7 +138,6 @@ class AnalyticsService:
 
     @staticmethod
     def format_stats_for_telegram(stats: dict) -> str:
-        """Форматирует статистику для отправки в Telegram."""
         if not stats:
             return "❌ Не удалось получить статистику."
 
@@ -181,12 +149,12 @@ class AnalyticsService:
         text += f"👨‍🎓 Учеников: {stats['clients']}\n"
 
         text += "\n💎 <b>Подписки:</b>\n"
-        text += f"  • Активных Pro: {stats['pro_active']}\n"
-        text += f"  • Скоро закончатся: {stats['trial_like']}\n"
+        text += f"  • <b>Платных Pro:</b> {stats['pro_paid']}\n"
+        text += f"  • На триале: {stats['pro_trial']}\n"
         text += f"  • Free: {stats['free_count']}\n"
         text += f"  • Конверсия Free→Pro: <b>{stats['conversion']}%</b>\n"
 
-        text += "\n💰 <b>Выручка (оценка):</b>\n"
+        text += "\n💰 <b>Выручка (только платные):</b>\n"
         text += f"  • Всего: {stats['revenue_total']} ⭐️\n"
         text += f"  • За 30 дней: {stats['revenue_30d']} ⭐️\n"
 
@@ -195,14 +163,15 @@ class AnalyticsService:
         text += f"  • За 30 дней: {stats['reg_30d']}\n"
 
         if stats['top_trainers']:
-            text += "\n🔥 <b>Топ-5 тренеров по ученикам:</b>\n"
+            text += "\n🔥 <b>Топ-5 тренеров:</b>\n"
             for i, t in enumerate(stats['top_trainers'], 1):
                 text += f"  {i}. {t['name']} — {t['clients']} уч.\n"
 
         if stats['expiring_soon']:
-            text += "\n⚠️ <b>Скоро закончится Pro:</b>\n"
+            text += "\n⚠️ <b>Скоро закончится:</b>\n"
             for item in stats['expiring_soon'][:5]:
-                text += f"  • {item['name']} (через {item['days']} дн.)\n"
+                tag = "🎁 триал" if item['is_trial'] else "💎 платный"
+                text += f"  • {item['name']} ({tag}, через {item['days']} дн.)\n"
 
         text += "\n━━━━━━━━━━━━━━━━━━━━━\n"
         text += f"<i>Обновлено: {datetime.now().strftime('%d.%m.%Y %H:%M')}</i>"
