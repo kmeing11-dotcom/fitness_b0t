@@ -307,3 +307,152 @@ async def menu_my_report(message: Message):
     except Exception as e:
         logger.error(f"Error in menu_my_report: {e}")
         await message.answer("❌ Ошибка при генерации отчёта.")
+
+
+# ============================================================
+#  ДОБАВИТЬ УЧЕНИКА (кнопка)
+# ============================================================
+
+@router.message(F.text == "➕ Добавить ученика")
+async def menu_add_client(message: Message):
+    """Показывает выбор: по ссылке или по @username."""
+    try:
+        user = db.get_user_by_telegram(message.from_user.id)
+        if not user:
+            await message.answer("❌ Вы не зарегистрированы. /start")
+            return
+
+        if user['role'] != UserRole.TRAINER.value:
+            await message.answer("❌ Только для тренеров.")
+            return
+
+        from app.keyboards.inline import get_add_client_choice_keyboard
+
+        await message.answer(
+            "➕ <b>Добавить ученика</b>\n\n"
+            "<b>Выберите способ:</b>\n\n"
+            "🔗 <b>По ссылке</b> — если ученик новый или не в Telegram\n"
+            "📱 <b>По @username</b> — если ученик уже в Telegram и знает свой username",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_add_client_choice_keyboard()
+        )
+
+    except Exception as e:
+        logger.error(f"Error in menu_add_client: {e}\n{traceback.format_exc()}")
+        await message.answer("❌ Ошибка.")
+
+
+# ============================================================
+#  CALLBACK: ВЫБОР СПОСОБА
+# ============================================================
+
+@router.callback_query(F.data == "add_client_link")
+async def callback_add_client_link(callback: CallbackQuery):
+    """Генерирует invite-ссылку."""
+    try:
+        user = db.get_user_by_telegram(callback.from_user.id)
+        if not user:
+            await callback.answer("❌ Пользователь не найден", show_alert=True)
+            return
+
+        if user['role'] != UserRole.TRAINER.value:
+            await callback.answer("❌ Только для тренеров", show_alert=True)
+            return
+
+        # Проверка Pro
+        from app.services.subscription_service import is_pro
+        if not is_pro(user['id']):
+            await callback.message.edit_text(
+                "❌ <b>Приглашение по ссылке — только на Pro</b>\n\n"
+                "На Free-плане используйте способ «По @username».\n\n"
+                "💎 Оформить Pro: /pro",
+                parse_mode=ParseMode.HTML
+            )
+            await callback.answer()
+            return
+
+        # Генерируем токен
+        token = db.generate_invite_token(user['id'])
+        if not token:
+            await callback.message.edit_text("❌ Не удалось создать ссылку.")
+            await callback.answer()
+            return
+
+        bot_info = await callback.bot.get_me()
+        invite_link = f"https://t.me/{bot_info.username}?start=inv_{token}"
+
+        text = (
+            f"🔗 <b>Ссылка для приглашения</b>\n\n"
+            f"<code>{invite_link}</code>\n\n"
+            f"<b>Что делать:</b>\n"
+            f"• Скопируйте ссылку\n"
+            f"• Отправьте ученику в любом мессенджере\n"
+            f"• Он перейдёт → зарегистрируется → <b>привяжется к вам</b>\n\n"
+            f"<i>Можно отправлять много раз — все, кто перейдёт, станут вашими учениками.</i>"
+        )
+
+        from app.keyboards.inline import get_back_inline_keyboard
+
+        await callback.message.edit_text(
+            text,
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_back_inline_keyboard("back_to_menu")
+        )
+        await callback.answer()
+
+        logger.info(f"🔗 Invite link shown for trainer {user['id']}")
+
+    except Exception as e:
+        logger.error(f"Error in callback_add_client_link: {e}\n{traceback.format_exc()}")
+        await callback.answer("❌ Ошибка", show_alert=True)
+
+
+@router.callback_query(F.data == "add_client_username")
+async def callback_add_client_username(callback: CallbackQuery):
+    """Показывает инструкцию по /add_client @username."""
+    try:
+        text = (
+            f"📱 <b>Добавить по @username</b>\n\n"
+            f"<b>Как это работает:</b>\n"
+            f"1. Ученик <b>уже</b> зарегистрирован в боте\n"
+            f"2. Вы знаете его Telegram username\n"
+            f"3. Отправьте команду:\n\n"
+            f"<code>/add_client @username</code>\n\n"
+            f"<b>Пример:</b>\n"
+            f"<code>/add_client @ivan_petrov</code>\n\n"
+            f"<i>Ученик получит приглашение и должен будет его подтвердить.</i>"
+        )
+
+        from app.keyboards.inline import get_add_client_username_keyboard
+
+        await callback.message.edit_text(
+            text,
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_add_client_username_keyboard()
+        )
+        await callback.answer()
+
+    except Exception as e:
+        logger.error(f"Error in callback_add_client_username: {e}")
+        await callback.answer("❌ Ошибка", show_alert=True)
+
+
+@router.callback_query(F.data == "add_client_back")
+async def callback_add_client_back(callback: CallbackQuery):
+    """Возврат к выбору способа."""
+    try:
+        from app.keyboards.inline import get_add_client_choice_keyboard
+
+        await callback.message.edit_text(
+            "➕ <b>Добавить ученика</b>\n\n"
+            "<b>Выберите способ:</b>\n\n"
+            "🔗 <b>По ссылке</b> — если ученик новый или не в Telegram\n"
+            "📱 <b>По @username</b> — если ученик уже в Telegram",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_add_client_choice_keyboard()
+        )
+        await callback.answer()
+
+    except Exception as e:
+        logger.error(f"Error in callback_add_client_back: {e}")
+        await callback.answer("❌ Ошибка", show_alert=True)
