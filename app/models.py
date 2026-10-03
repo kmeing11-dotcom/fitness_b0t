@@ -1,6 +1,7 @@
+# app/models.py
 from sqlalchemy import (
     Column, Integer, String, Float, DateTime, ForeignKey,
-    Boolean, Text, Time, Enum, UniqueConstraint, Index, BigInteger  # <-- Добавлен BigInteger
+    Boolean, Text, Time, Enum, UniqueConstraint, Index, BigInteger
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
@@ -29,8 +30,9 @@ class SubscriptionPlan(str, enum.Enum):
 class User(Base):
     __tablename__ = "users"
     timezone = Column(String(50), default="Europe/Moscow")
+    invite_token = Column(String(32), unique=True, nullable=True, index=True)
     id = Column(Integer, primary_key=True)
-    telegram_id = Column(BigInteger, unique=True, nullable=False, index=True)  # <-- ИЗМЕНЕНО на BigInteger
+    telegram_id = Column(BigInteger, unique=True, nullable=False, index=True)
     username = Column(String(100), unique=True, nullable=True)
     full_name = Column(String(200), nullable=True)
     role = Column(Enum(UserRole, name="userrole"), nullable=False)
