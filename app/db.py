@@ -61,14 +61,39 @@ class Database:
         """Обычная session (не scoped) — для db_service."""
         return cls.get_session_factory()()
 
-    @classmethod
-    def init_db(cls):
-        try:
-            Base.metadata.create_all(cls.get_engine())
-            logger.info("✅ Database tables created/verified")
-        except Exception as e:
-            logger.error(f"❌ Failed to create tables: {e}")
-            raise
+@classmethod
+def init_db(cls):
+    try:
+        Base.metadata.create_all(cls.get_engine())
+        logger.info("✅ Database tables created/verified")
+
+        # FIX: миграции для существующих таблиц
+        cls._run_migrations()
+    except Exception as e:
+        logger.error(f"❌ Failed to create tables: {e}")
+        raise
+
+@classmethod
+def _run_migrations(cls):
+    """Добавляет недостающие колонки в существующие таблицы."""
+    from sqlalchemy import text
+
+    migrations = [
+        # users.invite_token
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS invite_token VARCHAR(32)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_invite_token ON users(invite_token)",
+    ]
+
+    with cls.get_engine().connect() as conn:
+        for sql in migrations:
+            try:
+                conn.execute(text(sql))
+                conn.commit()
+            except Exception as e:
+                # Если колонка уже есть — пропускаем
+                logger.debug(f"Migration skipped: {sql[:50]}... ({e})")
+
+    logger.info("✅ Migrations applied")
 
     @classmethod
     def drop_db(cls):
