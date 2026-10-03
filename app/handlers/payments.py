@@ -67,8 +67,8 @@ async def cmd_pro(message: Message):
             f"⏰ Автоматические напоминания\n"
             f"📊 Расширенная статистика и графики\n\n"
             f"<b>Цена:</b> {PRO_PRICE_STARS} ⭐️ в месяц\n\n"
-            f"<i>Оплата через Telegram Stars. Подписка продлевается "
-            f"автоматически каждый месяц.</i>"
+            f"<i>Оплата через Telegram Stars."
+            f"По окончании подписки бот напомнит вам о продлении.</i>"
         )
 
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
