@@ -53,12 +53,11 @@ async def admin_panel(message: Message):
             parse_mode=ParseMode.HTML,
             reply_markup=get_admin_keyboard()
         )
-
         logger.info(f"🔐 Admin panel opened by {message.from_user.id}")
 
     except Exception as e:
         logger.error(f"Error in admin_panel: {e}")
-        await message.answer("❌ Ошибка при загрузке админ-панели.")
+        await message.answer("❌ Ошибка.")
 
 
 # ============================================================
@@ -85,7 +84,7 @@ async def admin_stats_callback(callback: CallbackQuery):
             f"👨‍🎓 <b>Ученики:</b> {len(clients)}\n"
             f"👥 <b>Всего пользователей:</b> {len(all_users)}\n"
             "━━━━━━━━━━━━━━━━━━━━━\n"
-            f"💎 <b>Активных подписок (Pro):</b> {active_subscriptions}\n"
+            f"💎 <b>Активных подписок:</b> {active_subscriptions}\n"
             f"📊 <b>Замеров сегодня:</b> {today_measurements}\n"
             "━━━━━━━━━━━━━━━━━━━━━\n"
             f"📅 <b>Дата:</b> {datetime.now().strftime('%d.%m.%Y %H:%M')}"
@@ -104,7 +103,7 @@ async def admin_stats_callback(callback: CallbackQuery):
 
 
 # ============================================================
-#  СПИСОК ПОЛЬЗОВАТЕЛЕЙ
+#  ПОЛЬЗОВАТЕЛИ
 # ============================================================
 
 @router.callback_query(F.data == "admin_users")
@@ -115,7 +114,6 @@ async def admin_users_callback(callback: CallbackQuery):
             return
 
         users = db.get_all_users()
-
         if not users:
             await callback.message.edit_text(
                 "📭 В системе нет пользователей.",
@@ -127,26 +125,19 @@ async def admin_users_callback(callback: CallbackQuery):
         trainers = [u for u in users if u['role'] == UserRole.TRAINER.value]
         clients = [u for u in users if u['role'] == UserRole.CLIENT.value]
 
-        response = "👥 <b>Список всех пользователей</b>\n"
+        response = "👥 <b>Список пользователей</b>\n"
         response += "━━━━━━━━━━━━━━━━━━━━━\n\n"
-
         response += f"👨‍🏫 <b>Тренеры ({len(trainers)}):</b>\n"
-        for trainer in trainers[:10]:
-            response += (
-                f"  • {trainer['full_name'] or 'Без имени'} "
-                f"(@{trainer['username'] or 'no_username'})\n"
-            )
+        for t in trainers[:10]:
+            response += f"  • {t['full_name'] or 'Без имени'} (@{t['username'] or 'no_username'})\n"
         if len(trainers) > 10:
-            response += f"  ... и ещё {len(trainers) - 10} тренеров\n"
+            response += f"  ... и ещё {len(trainers) - 10}\n"
 
         response += f"\n👨‍🎓 <b>Ученики ({len(clients)}):</b>\n"
-        for client in clients[:10]:
-            response += (
-                f"  • {client['full_name'] or 'Без имени'} "
-                f"(@{client['username'] or 'no_username'})\n"
-            )
+        for c in clients[:10]:
+            response += f"  • {c['full_name'] or 'Без имени'} (@{c['username'] or 'no_username'})\n"
         if len(clients) > 10:
-            response += f"  ... и ещё {len(clients) - 10} учеников\n"
+            response += f"  ... и ещё {len(clients) - 10}\n"
 
         await callback.message.edit_text(
             response,
@@ -173,14 +164,10 @@ async def admin_subscriptions_callback(callback: CallbackQuery):
 
         users = db.get_all_users()
         subscriptions = []
-
         for user in users:
             sub = db.get_user_subscription(user['id'])
             if sub and sub['is_active']:
-                subscriptions.append({
-                    'user': user,
-                    'subscription': sub
-                })
+                subscriptions.append({'user': user, 'subscription': sub})
 
         if not subscriptions:
             await callback.message.edit_text(
@@ -196,7 +183,7 @@ async def admin_subscriptions_callback(callback: CallbackQuery):
         for item in subscriptions[:20]:
             user = item['user']
             sub = item['subscription']
-            status = "🟢 Активна" if sub['expires_at'] > datetime.now() else "🔴 Истекла"
+            status = "🟢" if sub['expires_at'] > datetime.now() else "🔴"
             response += (
                 f"• {user['full_name'] or user['username']} "
                 f"(@{user['username'] or 'no_username'})\n"
@@ -204,7 +191,7 @@ async def admin_subscriptions_callback(callback: CallbackQuery):
             )
 
         if len(subscriptions) > 20:
-            response += f"\n... и ещё {len(subscriptions) - 20} подписок"
+            response += f"\n... и ещё {len(subscriptions) - 20}"
 
         await callback.message.edit_text(
             response,
@@ -214,12 +201,12 @@ async def admin_subscriptions_callback(callback: CallbackQuery):
         await callback.answer()
 
     except Exception as e:
-        logger.error(f"Error in admin_subscriptions_callback: {e}\n{traceback.format_exc()}")
+        logger.error(f"Error in admin_subscriptions_callback: {e}")
         await callback.answer("❌ Ошибка", show_alert=True)
 
 
 # ============================================================
-#  РАССЫЛКА — СТАРТ
+#  РАССЫЛКА
 # ============================================================
 
 @router.callback_query(F.data == "admin_broadcast")
@@ -231,8 +218,7 @@ async def admin_broadcast_callback(callback: CallbackQuery, state: FSMContext):
 
         await callback.message.edit_text(
             "📨 <b>Создание рассылки</b>\n\n"
-            "Введите текст сообщения для рассылки всем пользователям:\n"
-            "<i>(Можно использовать HTML-разметку)</i>",
+            "Введите текст сообщения:",
             parse_mode=ParseMode.HTML,
             reply_markup=get_admin_keyboard()
         )
@@ -246,6 +232,93 @@ async def admin_broadcast_callback(callback: CallbackQuery, state: FSMContext):
     except Exception as e:
         logger.error(f"Error in admin_broadcast_callback: {e}")
         await callback.answer("❌ Ошибка", show_alert=True)
+
+
+@router.message(StateFilter(BroadcastStates.entering_message))
+async def process_broadcast_message(message: Message, state: FSMContext):
+    try:
+        if message.text == "❌ Отмена":
+            await state.clear()
+            await message.answer(
+                "❌ Рассылка отменена.",
+                reply_markup=get_admin_keyboard()
+            )
+            return
+
+        await state.update_data(broadcast_text=message.text)
+        users = db.get_all_users()
+
+        await message.answer(
+            f"📨 <b>Подтверждение</b>\n\n"
+            f"Получателей: <b>{len(users)}</b>\n\n"
+            f"📝 Текст:\n{message.text}\n\n"
+            f"Отправить?",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_broadcast_confirm_keyboard()
+        )
+        await state.set_state(BroadcastStates.confirming)
+
+    except Exception as e:
+        logger.error(f"Error in process_broadcast_message: {e}")
+        await message.answer("❌ Ошибка.")
+
+
+@router.callback_query(StateFilter(BroadcastStates.confirming), F.data == "broadcast_confirm")
+async def confirm_broadcast(callback: CallbackQuery, state: FSMContext):
+    try:
+        data = await state.get_data()
+        text = data.get('broadcast_text')
+
+        if not text:
+            await callback.message.edit_text("❌ Текст не найден.")
+            await callback.answer()
+            await state.clear()
+            return
+
+        users = db.get_all_users()
+        sent = 0
+        failed = 0
+
+        await callback.message.edit_text("⏳ Отправка...")
+
+        for user in users:
+            try:
+                await callback.bot.send_message(
+                    chat_id=user['telegram_id'],
+                    text=text,
+                    parse_mode=ParseMode.HTML
+                )
+                sent += 1
+            except Exception as e:
+                failed += 1
+                logger.warning(f"Broadcast failed for {user['id']}: {e}")
+
+        db.broadcast_message(text, callback.from_user.id)
+
+        await callback.message.edit_text(
+            f"✅ <b>Рассылка завершена</b>\n\n"
+            f"✅ Отправлено: {sent}\n"
+            f"❌ Ошибок: {failed}",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_admin_keyboard()
+        )
+        await state.clear()
+        await callback.answer()
+
+    except Exception as e:
+        logger.error(f"Error in confirm_broadcast: {e}")
+        await callback.answer("❌ Ошибка", show_alert=True)
+        await state.clear()
+
+
+@router.callback_query(StateFilter(BroadcastStates.confirming), F.data == "broadcast_cancel")
+async def cancel_broadcast(callback: CallbackQuery, state: FSMContext):
+    await callback.message.edit_text(
+        "❌ Рассылка отменена.",
+        reply_markup=get_admin_keyboard()
+    )
+    await state.clear()
+    await callback.answer()
 
 
 # ============================================================
@@ -266,8 +339,8 @@ async def admin_backup_callback(callback: CallbackQuery):
 
         if not backup_path:
             await callback.message.edit_text(
-                "❌ Не удалось создать бэкап.\n\n"
-                "<i>Для PostgreSQL файловый бэкап не поддерживается.</i>",
+                "❌ Не удалось создать бэкап.\n"
+                "<i>Для PostgreSQL файловый бэкап недоступен.</i>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=get_admin_keyboard()
             )
@@ -276,27 +349,12 @@ async def admin_backup_callback(callback: CallbackQuery):
         await callback.message.delete()
         await callback.message.answer_document(
             document=FSInputFile(backup_path),
-            caption=(
-                f"💾 <b>Бэкап базы данных</b>\n"
-                f"📅 {datetime.now().strftime('%d.%m.%Y %H:%M')}"
-            ),
-            parse_mode=ParseMode.HTML
-        )
-
-        logger.info(
-            f"💾 Backup created by admin {callback.from_user.id}: {backup_path}"
+            caption=f"💾 Бэкап от {datetime.now().strftime('%d.%m.%Y %H:%M')}"
         )
 
     except Exception as e:
         logger.error(f"Error in admin_backup_callback: {e}")
-        try:
-            await callback.message.edit_text(
-                "❌ Ошибка при создании бэкапа.",
-                reply_markup=get_admin_keyboard()
-            )
-        except Exception:
-            pass
-        await callback.answer()
+        await callback.answer("❌ Ошибка", show_alert=True)
 
 
 # ============================================================
@@ -331,162 +389,20 @@ async def admin_logs_callback(callback: CallbackQuery):
             await callback.message.delete()
             await callback.message.answer_document(
                 document=FSInputFile(log_path),
-                caption=(
-                    f"📋 <b>Логи системы</b>\n"
-                    f"📅 {datetime.now().strftime('%d.%m.%Y %H:%M')}"
-                ),
-                parse_mode=ParseMode.HTML
+                caption=f"📋 Логи от {datetime.now().strftime('%d.%m.%Y %H:%M')}"
             )
         else:
             await callback.message.edit_text(
-                f"📋 <b>Последние логи:</b>\n\n"
-                f"<code>{log_text}</code>",
+                f"📋 <b>Последние логи:</b>\n\n<code>{log_text}</code>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=get_admin_keyboard()
             )
 
-        logger.info(f"📋 Logs viewed by admin {callback.from_user.id}")
         await callback.answer()
 
     except Exception as e:
         logger.error(f"Error in admin_logs_callback: {e}")
-        try:
-            await callback.message.edit_text(
-                "❌ Ошибка при загрузке логов.",
-                reply_markup=get_admin_keyboard()
-            )
-        except Exception:
-            pass
-        await callback.answer()
-
-
-# ============================================================
-#  РАССЫЛКА — FSM
-# ============================================================
-
-@router.message(StateFilter(BroadcastStates.entering_message))
-async def process_broadcast_message(message: Message, state: FSMContext):
-    try:
-        if message.text == "❌ Отмена":
-            await state.clear()
-            await message.answer(
-                "❌ Рассылка отменена.",
-                reply_markup=get_admin_keyboard()
-            )
-            return
-
-        await state.update_data(broadcast_text=message.text)
-
-        users = db.get_all_users()
-        total_users = len(users)
-
-        await message.answer(
-            f"📨 <b>Подтверждение рассылки</b>\n\n"
-            f"Получателей: <b>{total_users}</b> пользователей\n\n"
-            f"📝 <b>Текст сообщения:</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"{message.text}\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"<i>Отправить рассылку всем пользователям?</i>",
-            parse_mode=ParseMode.HTML,
-            reply_markup=get_broadcast_confirm_keyboard()
-        )
-        await state.set_state(BroadcastStates.confirming)
-
-    except Exception as e:
-        logger.error(f"Error in process_broadcast_message: {e}")
-        await message.answer("❌ Ошибка при обработке текста.")
-
-
-@router.callback_query(StateFilter(BroadcastStates.confirming),
-                       F.data == "broadcast_confirm")
-async def confirm_broadcast(callback: CallbackQuery, state: FSMContext):
-    try:
-        data = await state.get_data()
-        text = data.get('broadcast_text')
-
-        if not text:
-            await callback.message.edit_text(
-                "❌ Текст сообщения не найден.",
-                reply_markup=get_admin_keyboard()
-            )
-            await callback.answer()
-            await state.clear()
-            return
-
-        users = db.get_all_users()
-        total_users = len(users)
-
-        if total_users == 0:
-            await callback.message.edit_text(
-                "❌ Нет пользователей для рассылки.",
-                reply_markup=get_admin_keyboard()
-            )
-            await callback.answer()
-            await state.clear()
-            return
-
-        sent_count = 0
-        failed_count = 0
-
-        await callback.message.edit_text(
-            "⏳ <b>Отправка рассылки...</b>\n"
-            f"Всего: {total_users} пользователей",
-            parse_mode=ParseMode.HTML
-        )
-
-        for user in users:
-            try:
-                await callback.bot.send_message(
-                    chat_id=user['telegram_id'],
-                    text=text,
-                    parse_mode=ParseMode.HTML
-                )
-                sent_count += 1
-            except Exception as e:
-                failed_count += 1
-                logger.warning(f"Broadcast failed for user {user['id']}: {e}")
-
-        db.broadcast_message(text, callback.from_user.id)
-
-        await callback.message.edit_text(
-            f"✅ <b>Рассылка завершена!</b>\n\n"
-            f"✅ Отправлено: {sent_count}\n"
-            f"❌ Не доставлено: {failed_count}\n"
-            f"👥 Всего: {total_users}",
-            parse_mode=ParseMode.HTML,
-            reply_markup=get_admin_keyboard()
-        )
-
-        logger.info(
-            f"📨 Broadcast sent by admin {callback.from_user.id}: "
-            f"{sent_count} delivered, {failed_count} failed"
-        )
-        await state.clear()
-        await callback.answer()
-
-    except Exception as e:
-        logger.error(f"Error in confirm_broadcast: {e}\n{traceback.format_exc()}")
-        try:
-            await callback.message.edit_text(
-                "❌ Ошибка при отправке рассылки.",
-                reply_markup=get_admin_keyboard()
-            )
-        except Exception:
-            pass
-        await callback.answer()
-        await state.clear()
-
-
-@router.callback_query(StateFilter(BroadcastStates.confirming),
-                       F.data == "broadcast_cancel")
-async def cancel_broadcast(callback: CallbackQuery, state: FSMContext):
-    await callback.message.edit_text(
-        "❌ Рассылка отменена.",
-        reply_markup=get_admin_keyboard()
-    )
-    await state.clear()
-    await callback.answer()
+        await callback.answer("❌ Ошибка", show_alert=True)
 
 
 # ============================================================
@@ -509,20 +425,75 @@ async def admin_stats(message: Message):
         response = (
             "📊 <b>Статистика системы</b>\n"
             "━━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"👨‍🏫 <b>Тренеры:</b> {len(trainers)}\n"
-            f"👨‍🎓 <b>Ученики:</b> {len(clients)}\n"
-            f"👥 <b>Всего пользователей:</b> {len(all_users)}\n"
+            f"👨‍🏫 Тренеры: {len(trainers)}\n"
+            f"👨‍🎓 Ученики: {len(clients)}\n"
+            f"👥 Всего: {len(all_users)}\n"
             "━━━━━━━━━━━━━━━━━━━━━\n"
-            f"💎 <b>Активных подписок (Pro):</b> {active_subscriptions}\n"
-            f"📊 <b>Замеров сегодня:</b> {today_measurements}\n"
-            "━━━━━━━━━━━━━━━━━━━━━\n"
-            f"📅 <b>Дата:</b> {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+            f"💎 Активных подписок: {active_subscriptions}\n"
+            f"📊 Замеров сегодня: {today_measurements}"
         )
 
         await message.answer(response, parse_mode=ParseMode.HTML)
 
-        logger.info(f"📊 Admin stats viewed by {message.from_user.id}")
+    except Exception as e:
+        logger.error(f"Error in admin_stats: {e}")
+        await message.answer("❌ Ошибка.")
+
+
+# ============================================================
+#  ТЕСТ: WEEKLY ДАЙДЖЕСТ
+# ============================================================
+
+@router.message(Command("test_digest"))
+async def test_digest(message: Message):
+    """Отправляет дайджест СЕЙЧАС (для проверки). Только для админа."""
+    try:
+        if not is_admin(message.from_user.id):
+            await message.answer("❌ Только для админов.")
+            return
+
+        from app.services.digest_service import DigestService
+
+        await message.answer("⏳ Формирую дайджест...")
+
+        user = db.get_user_by_telegram(message.from_user.id)
+        if not user or user['role'] != UserRole.TRAINER.value:
+            await message.answer(
+                "❌ Вы не тренер. Используйте /test_digest_all чтобы разослать всем."
+            )
+            return
+
+        text = DigestService.build_digest_for_trainer(user['id'])
+
+        if not text:
+            await message.answer(
+                "📭 Нет данных для дайджеста (нет учеников или замеров)."
+            )
+            return
+
+        await message.answer(text, parse_mode=ParseMode.HTML)
 
     except Exception as e:
-        logger.error(f"Error in admin_stats: {e}\n{traceback.format_exc()}")
-        await message.answer("❌ Ошибка при загрузке статистики.")
+        logger.error(f"Error in test_digest: {e}\n{traceback.format_exc()}")
+        await message.answer(f"❌ Ошибка: {str(e)[:200]}")
+
+
+@router.message(Command("test_digest_all"))
+async def test_digest_all(message: Message):
+    """Рассылает дайджест ВСЕМ тренерам прямо сейчас. Только для админа."""
+    try:
+        if not is_admin(message.from_user.id):
+            await message.answer("❌ Только для админов.")
+            return
+
+        from app.services.digest_service import DigestService
+
+        await message.answer("⏳ Рассылаю дайджесты всем тренерам...")
+
+        await DigestService.send_digests_to_all_trainers(message.bot)
+
+        await message.answer("✅ Готово. Проверьте уведомления.")
+
+    except Exception as e:
+        logger.error(f"Error in test_digest_all: {e}\n{traceback.format_exc()}")
+        await message.answer(f"❌ Ошибка: {str(e)[:200]}")
