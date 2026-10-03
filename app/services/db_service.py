@@ -531,29 +531,32 @@ class DatabaseService:
                 })
             return None
 
-    def set_trial_subscription(self, user_id: int, days: int = 7):
-        with self._get_session() as session:
-            old = session.query(Subscription).filter_by(user_id=user_id).first()
-            if old:
-                old.is_active = False
+def set_trial_subscription(self, user_id: int, days: int = 7):
+    """Даёт триал Pro (is_trial=True)."""
+    with self._get_session() as session:
+        old = session.query(Subscription).filter_by(user_id=user_id).first()
+        if old:
+            old.is_active = False
 
-            expires_at = datetime.now() + timedelta(days=days)
-            sub = Subscription(
-                user_id=user_id,
-                plan="pro",
-                expires_at=expires_at,
-                is_active=True
-            )
-            session.add(sub)
-            session.flush()
-            return DotDict({
-                'id': sub.id,
-                'user_id': sub.user_id,
-                'plan': sub.plan.value if hasattr(sub.plan, 'value') else sub.plan,
-                'expires_at': sub.expires_at,
-                'created_at': sub.created_at,
-                'is_active': sub.is_active
-            })
+        expires_at = datetime.now() + timedelta(days=days)
+        sub = Subscription(
+            user_id=user_id,
+            plan="pro",
+            expires_at=expires_at,
+            is_trial=True,          # ← FIX
+            is_active=True
+        )
+        session.add(sub)
+        session.flush()
+        return DotDict({
+            'id': sub.id,
+            'user_id': sub.user_id,
+            'plan': sub.plan.value if hasattr(sub.plan, 'value') else sub.plan,
+            'expires_at': sub.expires_at,
+            'is_trial': sub.is_trial,
+            'created_at': sub.created_at,
+            'is_active': sub.is_active
+        })
 
     def set_subscription(self, user_id: int, plan: str, days: int = 30):
         with self._get_session() as session:
