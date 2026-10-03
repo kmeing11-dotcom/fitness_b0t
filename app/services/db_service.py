@@ -8,17 +8,13 @@ from datetime import datetime, timedelta
 from app.utils.logger import get_logger
 from contextlib import contextmanager
 import traceback
+import secrets
 
 logger = get_logger(__name__)
 
 
-# ============================================================
-# DotDict — словарь, к которому можно обращаться и через ['key'],
-# и через .attr. Решает проблему "db_service возвращает dict,
-# а хендлеры ждут объект".
-# ============================================================
 class DotDict(dict):
-    """Словарь, поддерживающий доступ через точку: d.key == d['key']."""
+    """Словарь, к которому можно обращаться и через ['key'], и через .attr."""
 
     def __getattr__(self, key):
         try:
@@ -42,12 +38,10 @@ class DotDict(dict):
 
 class DatabaseService:
     def __init__(self):
-        # FIX: используем единый engine из app.db вместо своего.
-        # Раньше было два независимых engine (B9).
         from app.db import Database
         self.engine = Database.get_engine()
         self.Session = Database.get_session_factory()
-        logger.info("✅ DatabaseService initialized (shared engine)")
+        logger.debug("✅ DatabaseService initialized (shared engine)")
 
     @contextmanager
     def _get_session(self):
@@ -55,7 +49,6 @@ class DatabaseService:
         try:
             yield session
             session.commit()
-            logger.debug("✅ Session committed")
         except Exception as e:
             session.rollback()
             logger.error(f"❌ Session rolled back: {e}")
@@ -81,6 +74,7 @@ class DatabaseService:
             'height': user.height,
             'goal': user.goal,
             'timezone': user.timezone if hasattr(user, 'timezone') else 'Europe/Moscow',
+            'invite_token': user.invite_token if hasattr(user, 'invite_token') else None,
             'created_at': user.created_at,
             'is_active': user.is_active
         })
@@ -118,10 +112,6 @@ class DatabaseService:
         with self._get_session() as session:
             session.expire_all()
             user = session.query(User).filter(User.telegram_id == telegram_id).first()
-            if user:
-                logger.debug(f"🔍 Found user: telegram_id={user.telegram_id}")
-            else:
-                logger.debug(f"⚠️ User not found: telegram_id={telegram_id}")
             return self._user_to_dict(user)
 
     def get_user(self, user_id: int):
@@ -139,11 +129,8 @@ class DatabaseService:
             return self._user_to_dict(user)
 
     def create_user(self, telegram_id, username, full_name, role, **kwargs):
-        """Создаёт или обновляет пользователя. Возвращает DotDict."""
         try:
             with self._get_session() as session:
-                logger.info(f"💾 Creating/updating user: telegram_id={telegram_id}, role={role}")
-
                 existing_user = session.query(User).filter(
                     User.telegram_id == telegram_id
                 ).first()
@@ -156,7 +143,6 @@ class DatabaseService:
                         if hasattr(existing_user, key):
                             setattr(existing_user, key, value)
                     session.flush()
-                    logger.info(f"✅ User updated: {existing_user.telegram_id}")
                     return self._user_to_dict(existing_user)
 
                 user = User(
@@ -168,12 +154,10 @@ class DatabaseService:
                 )
                 session.add(user)
                 session.flush()
-                logger.info(f"✅ User created: {user.telegram_id}")
                 return self._user_to_dict(user)
 
         except Exception as e:
-            logger.error(f"❌❌❌ FAILED to create user: {e}")
-            logger.error(f"❌❌❌ Traceback: {traceback.format_exc()}")
+            logger.error(f"❌ FAILED to create user: {e}\n{traceback.format_exc()}")
             raise
 
     def update_user(self, user_id: int, **kwargs):
@@ -209,6 +193,60 @@ class DatabaseService:
             session.expire_all()
             users = session.query(User).filter(User.id.in_(user_ids)).all()
             return [self._user_to_dict(u) for u in users]
+
+    # ====================== INVITE-ССЫЛКИ ======================
+
+    def generate_invite_token(self, trainer_id: int):
+        """Генерирует уникальный токен для приглашения. Если уже есть — возвращает существующий."""
+        with self._get_session() as session:
+            user = session.query(User).filter(User.id == trainer_id).first()
+            if not user:
+                return None
+
+            if user.invite_token:
+                return user.invite_token
+
+            for _ in range(10):
+                token = secrets.token_urlsafe(16)[:24]
+                existing = session.query(User).filter(
+                    User.invite_token == token
+                ).first()
+                if not existing:
+                    user.invite_token = token
+                    session.flush()
+                    logger.info(f"🔗 Invite token generated: trainer={trainer_id}")
+                    return token
+
+            raise Exception("Failed to generate unique invite token")
+
+    def get_trainer_by_invite_token(self, token: str):
+        if not token:
+            return None
+        with self._get_session() as session:
+            session.expire_all()
+            user = session.query(User).filter(
+                User.invite_token == token,
+                User.role == UserRole.TRAINER
+            ).first()
+            return self._user_to_dict(user)
+
+    def regenerate_invite_token(self, trainer_id: int):
+        with self._get_session() as session:
+            user = session.query(User).filter(User.id == trainer_id).first()
+            if not user:
+                return None
+
+            for _ in range(10):
+                token = secrets.token_urlsafe(16)[:24]
+                existing = session.query(User).filter(
+                    User.invite_token == token
+                ).first()
+                if not existing:
+                    user.invite_token = token
+                    session.flush()
+                    return token
+
+            raise Exception("Failed to regenerate invite token")
 
     # ====================== CLIENTS ======================
 
