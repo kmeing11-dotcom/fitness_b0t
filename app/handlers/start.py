@@ -12,6 +12,7 @@ import traceback
 
 from app.models import UserRole
 from app.services.db_service import DatabaseService
+from app.services.subscription_service import give_trial
 from app.keyboards.inline import (
     get_role_keyboard,
     get_trainer_menu_keyboard,
@@ -47,7 +48,6 @@ TIMEZONE_CHOICES = [
 
 
 def get_timezone_keyboard(page: int = 0) -> InlineKeyboardMarkup:
-    """Клавиатура с выбором таймзоны (пагинация по 5)."""
     per_page = 5
     total = len(TIMEZONE_CHOICES)
     start = page * per_page
@@ -143,7 +143,7 @@ async def register_trainer(message: Message, state: FSMContext):
         await state.set_state(RegistrationStates.trainer_name)
     except Exception as e:
         logger.error(f"Error in register_trainer: {e}")
-        await message.answer("❌ Ошибка. Попробуйте ещё раз.")
+        await message.answer("❌ Ошибка.")
 
 
 @router.message(StateFilter(RegistrationStates.choosing_role), F.text == "👤 Ученик")
@@ -157,11 +157,11 @@ async def register_client(message: Message, state: FSMContext):
         await state.set_state(RegistrationStates.client_name)
     except Exception as e:
         logger.error(f"Error in register_client: {e}")
-        await message.answer("❌ Ошибка. Попробуйте ещё раз.")
+        await message.answer("❌ Ошибка.")
 
 
 # ============================================================
-#  ОБЩАЯ ОТМЕНА РЕГИСТРАЦИИ
+#  ОБЩАЯ ОТМЕНА
 # ============================================================
 
 @router.message(
@@ -268,7 +268,7 @@ async def process_timezone_page(callback: CallbackQuery, state: FSMContext):
 
 
 # ============================================================
-#  ВЫБОР ТАЙМЗОНЫ → СОЗДАНИЕ ТРЕНЕРА
+#  ВЫБОР ТАЙМЗОНЫ → СОЗДАНИЕ ТРЕНЕРА + ТРИАЛ
 # ============================================================
 
 @router.callback_query(
@@ -277,7 +277,6 @@ async def process_timezone_page(callback: CallbackQuery, state: FSMContext):
 )
 async def process_trainer_timezone(callback: CallbackQuery, state: FSMContext):
     try:
-        # FIX: tz_Europe/Moscow → Europe/Moscow
         timezone = callback.data.replace("tz_", "", 1)
 
         data = await state.get_data()
@@ -299,20 +298,29 @@ async def process_trainer_timezone(callback: CallbackQuery, state: FSMContext):
             await state.clear()
             return
 
-        # Находим человекочитаемое название таймзоны
+        # FIX: автотриал Pro на 7 дней
+        trial_given = give_trial(user['id'], days=7)
+
         tz_label = dict(TIMEZONE_CHOICES).get(timezone, timezone)
 
-        # Редактируем сообщение с выбором → убираем кнопки
+        trial_text = ""
+        if trial_given:
+            trial_text = (
+                f"\n\n🎁 <b>Вам активирован Pro на 7 дней бесплатно!</b>\n"
+                f"Пользуйтесь всеми функциями без ограничений.\n\n"
+                f"<i>Через 7 дней можно продлить за 450 ₽/мес командой /pro</i>"
+            )
+
         await callback.message.edit_text(
             f"✅ <b>Профиль тренера создан!</b>\n\n"
             f"👤 Имя: {user['full_name']}\n"
             f"📱 Телефон: {user['phone'] or 'Не указан'}\n"
             f"🏢 Студия: {user['studio_name'] or 'Не указана'}\n"
-            f"🌍 Регион: {tz_label}",
+            f"🌍 Регион: {tz_label}"
+            f"{trial_text}",
             parse_mode=ParseMode.HTML
         )
 
-        # Отправляем Reply-меню
         await callback.message.answer(
             "👇 Используйте меню ниже:",
             reply_markup=get_trainer_menu_keyboard()
@@ -321,9 +329,7 @@ async def process_trainer_timezone(callback: CallbackQuery, state: FSMContext):
         await state.clear()
         await callback.answer("✅ Регистрация завершена!")
 
-        logger.info(
-            f"✅ Trainer registered: id={user['id']}, tz={timezone}"
-        )
+        logger.info(f"✅ Trainer registered: id={user['id']}, tz={timezone}, trial={trial_given}")
 
     except Exception as e:
         logger.error(f"Error in process_trainer_timezone: {e}\n{traceback.format_exc()}")
