@@ -312,15 +312,18 @@ def get_admin_keyboard() -> InlineKeyboardMarkup:
     kb = [
         [
             InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats"),
-            InlineKeyboardButton(text="👥 Пользователи", callback_data="admin_users")
+            InlineKeyboardButton(text="📈 Аналитика", callback_data="admin_analytics")
+        ],
+        [
+            InlineKeyboardButton(text="👥 Пользователи", callback_data="admin_users"),
+            InlineKeyboardButton(text="💎 Подписки", callback_data="admin_subscriptions")
         ],
         [
             InlineKeyboardButton(text="📨 Рассылка", callback_data="admin_broadcast"),
             InlineKeyboardButton(text="💾 Бэкап", callback_data="admin_backup")
         ],
         [
-            InlineKeyboardButton(text="📋 Логи", callback_data="admin_logs"),
-            InlineKeyboardButton(text="💎 Подписки", callback_data="admin_subscriptions")
+            InlineKeyboardButton(text="📋 Логи", callback_data="admin_logs")
         ],
         [
             InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_admin")
