@@ -7,7 +7,6 @@ from typing import List, Optional
 
 
 def _get(obj, key, default=None):
-    """Универсальный доступ к полю (dict / DotDict / объект)."""
     if obj is None:
         return default
     if isinstance(obj, dict):
@@ -33,10 +32,11 @@ def get_role_keyboard() -> ReplyKeyboardMarkup:
 
 def get_trainer_menu_keyboard() -> ReplyKeyboardMarkup:
     kb = [
-        [KeyboardButton(text="👥 Мои ученики")],
+        [KeyboardButton(text="👥 Мои ученики"), KeyboardButton(text="➕ Добавить ученика")],
         [KeyboardButton(text="📊 Статистика"), KeyboardButton(text="📈 Отчёты")],
         [KeyboardButton(text="⏰ Напоминания"), KeyboardButton(text="📨 Рассылка")],
-        [KeyboardButton(text="⚙️ Настройки"), KeyboardButton(text="❓ Помощь")]
+        [KeyboardButton(text="💎 Pro-подписка"), KeyboardButton(text="⚙️ Настройки")],
+        [KeyboardButton(text="❓ Помощь")]
     ]
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
 
@@ -52,11 +52,6 @@ def get_client_menu_keyboard() -> ReplyKeyboardMarkup:
 
 
 def get_cancel_keyboard() -> ReplyKeyboardMarkup:
-    """
-    FIX: раньше была кнопка «❌ Отмена» — не работала.
-    Теперь — «🔙 Назад». Используется в FSM, где хендлер
-    сам ловит текст «🔙 Назад» и отменяет ввод.
-    """
     kb = [[KeyboardButton(text="🔙 Назад")]]
     return ReplyKeyboardMarkup(
         keyboard=kb,
@@ -66,7 +61,6 @@ def get_cancel_keyboard() -> ReplyKeyboardMarkup:
 
 
 def get_back_keyboard() -> ReplyKeyboardMarkup:
-    """Reply-клавиатура с кнопкой Назад (только для обычных сообщений)."""
     kb = [[KeyboardButton(text="🔙 Назад")]]
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
 
@@ -81,7 +75,49 @@ def get_yes_no_keyboard() -> ReplyKeyboardMarkup:
 
 
 # ============================================================
-#  INLINE KEYBOARDS
+#  INLINE: МЕНЮ "ДОБАВИТЬ УЧЕНИКА"
+# ============================================================
+
+def get_add_client_choice_keyboard() -> InlineKeyboardMarkup:
+    """Выбор способа добавления ученика."""
+    kb = [
+        [
+            InlineKeyboardButton(
+                text="🔗 По ссылке (для новых)",
+                callback_data="add_client_link"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="📱 По @username (кто уже в боте)",
+                callback_data="add_client_username"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="🔙 Назад",
+                callback_data="back_to_menu"
+            )
+        ]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=kb)
+
+
+def get_add_client_username_keyboard() -> InlineKeyboardMarkup:
+    """Подсказка про /add_client @username."""
+    kb = [
+        [
+            InlineKeyboardButton(
+                text="🔙 Назад",
+                callback_data="add_client_back"
+            )
+        ]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=kb)
+
+
+# ============================================================
+#  INLINE: КЛИЕНТЫ
 # ============================================================
 
 def get_clients_list_keyboard(
@@ -304,7 +340,7 @@ def get_broadcast_confirm_keyboard() -> InlineKeyboardMarkup:
 
 
 # ============================================================
-#  ВЫБОР ЦЕЛИ
+#  ЦЕЛЬ
 # ============================================================
 
 def get_goal_inline_keyboard() -> InlineKeyboardMarkup:
