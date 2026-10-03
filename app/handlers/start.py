@@ -28,10 +28,6 @@ router = Router()
 db = DatabaseService()
 
 
-# ============================================================
-#  СПИСОК РЕГИОНОВ
-# ============================================================
-
 TIMEZONE_CHOICES = [
     ("Europe/Kaliningrad", "Калининград (UTC+2)"),
     ("Europe/Moscow", "Москва (UTC+3)"),
@@ -77,10 +73,6 @@ def get_timezone_keyboard(page: int = 0) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
 
-# ============================================================
-#  FSM
-# ============================================================
-
 class RegistrationStates(StatesGroup):
     choosing_role = State()
     trainer_name = State()
@@ -94,14 +86,103 @@ class RegistrationStates(StatesGroup):
 
 
 # ============================================================
-#  /start
+#  /start (с обработкой invite-ссылок)
 # ============================================================
 
 @router.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
     try:
+        # FIX: обработка deep-link /start inv_TOKEN
+        args = message.text.split()
+        invite_token = None
+
+        if len(args) >= 2 and args[1].startswith("inv_"):
+            invite_token = args[1].replace("inv_", "", 1)
+            logger.info(f"🔗 Deep link with invite token: {invite_token}")
+
         user = db.get_user_by_telegram(message.from_user.id)
 
+        # ============================================================
+        #  ОБРАБОТКА INVITE-ССЫЛКИ
+        # ============================================================
+        if invite_token:
+            trainer = db.get_trainer_by_invite_token(invite_token)
+
+            if not trainer:
+                await message.answer(
+                    "❌ <b>Ссылка недействительна</b>\n\n"
+                    "Возможно, тренер её обновил. Попросите новую.",
+                    parse_mode=ParseMode.HTML
+                )
+                return
+
+            # Если пользователь не зарегистрирован — просим зарегистрироваться
+            if not user:
+                await state.update_data(pending_invite=trainer['id'])
+                await message.answer(
+                    f"👋 <b>Вас приглашает тренер {trainer['full_name']}!</b>\n\n"
+                    f"Сначала зарегистрируйтесь как <b>Ученик</b>:",
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=get_role_keyboard()
+                )
+                await state.set_state(RegistrationStates.choosing_role)
+                return
+
+            # Если уже тренер — нельзя
+            if user['role'] != UserRole.CLIENT.value:
+                await message.answer(
+                    "❌ Приглашение только для учеников.\n"
+                    "Вы зарегистрированы как тренер."
+                )
+                return
+
+            # Проверяем, не привязан ли уже
+            existing_clients = db.get_trainer_clients(trainer['id'])
+            if user['id'] in [c['id'] for c in existing_clients]:
+                await message.answer(
+                    f"✅ Вы уже ученик тренера <b>{trainer['full_name']}</b>.",
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=get_client_menu_keyboard()
+                )
+                return
+
+            # Привязываем
+            success = db.add_client_to_trainer(trainer['id'], user['id'])
+
+            if success:
+                await message.answer(
+                    f"✅ <b>Вы привязаны к тренеру!</b>\n\n"
+                    f"👨‍🏫 Тренер: <b>{trainer['full_name']}</b>\n\n"
+                    f"Теперь вносите замеры через /set_measurements, "
+                    f"и он будет видеть ваш прогресс.",
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=get_client_menu_keyboard()
+                )
+
+                try:
+                    await message.bot.send_message(
+                        chat_id=trainer['telegram_id'],
+                        text=(
+                            f"✅ <b>Новый ученик!</b>\n\n"
+                            f"👤 <b>{user['full_name']}</b>\n"
+                            f"📱 @{user['username'] or 'не указан'}\n\n"
+                            f"Теперь вы можете отслеживать его прогресс."
+                        ),
+                        parse_mode=ParseMode.HTML
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not notify trainer: {e}")
+
+                logger.info(f"✅ Client {user['id']} linked to trainer {trainer['id']} via invite")
+            else:
+                await message.answer(
+                    "❌ Не удалось привязаться. Попробуйте позже."
+                )
+            return
+
+        # ============================================================
+        #  ОБЫЧНЫЙ /start
+        # ============================================================
         if user:
             await state.clear()
             if user['role'] == UserRole.TRAINER.value:
@@ -160,10 +241,6 @@ async def register_client(message: Message, state: FSMContext):
         await message.answer("❌ Ошибка.")
 
 
-# ============================================================
-#  ОБЩАЯ ОТМЕНА
-# ============================================================
-
 @router.message(
     StateFilter(
         RegistrationStates.trainer_name,
@@ -183,7 +260,7 @@ async def cancel_registration_any_step(message: Message, state: FSMContext):
 
 
 # ============================================================
-#  РЕГИСТРАЦИЯ ТРЕНЕРА
+#  ТРЕНЕР
 # ============================================================
 
 @router.message(StateFilter(RegistrationStates.trainer_name))
@@ -247,10 +324,6 @@ async def process_trainer_studio(message: Message, state: FSMContext):
         await message.answer(f"❌ Ошибка: {str(e)[:200]}")
 
 
-# ============================================================
-#  ПАГИНАЦИЯ ТАЙМЗОН
-# ============================================================
-
 @router.callback_query(
     StateFilter(RegistrationStates.trainer_timezone),
     F.data.startswith("tzpage_")
@@ -266,10 +339,6 @@ async def process_timezone_page(callback: CallbackQuery, state: FSMContext):
         logger.error(f"Error in process_timezone_page: {e}")
         await callback.answer("❌ Ошибка", show_alert=True)
 
-
-# ============================================================
-#  ВЫБОР ТАЙМЗОНЫ → СОЗДАНИЕ ТРЕНЕРА + ТРИАЛ
-# ============================================================
 
 @router.callback_query(
     StateFilter(RegistrationStates.trainer_timezone),
@@ -298,9 +367,7 @@ async def process_trainer_timezone(callback: CallbackQuery, state: FSMContext):
             await state.clear()
             return
 
-        # FIX: автотриал Pro на 7 дней
         trial_given = give_trial(user['id'], days=7)
-
         tz_label = dict(TIMEZONE_CHOICES).get(timezone, timezone)
 
         trial_text = ""
@@ -338,7 +405,7 @@ async def process_trainer_timezone(callback: CallbackQuery, state: FSMContext):
 
 
 # ============================================================
-#  РЕГИСТРАЦИЯ УЧЕНИКА
+#  УЧЕНИК
 # ============================================================
 
 @router.message(StateFilter(RegistrationStates.client_name))
@@ -403,15 +470,10 @@ async def process_client_height(message: Message, state: FSMContext):
         await message.answer("❌ Введите число.", reply_markup=get_cancel_keyboard())
 
 
-# ============================================================
-#  ВЫБОР ЦЕЛИ УЧЕНИКА
-# ============================================================
-
 @router.callback_query(F.data.startswith("goal_"))
 async def process_client_goal_callback(callback: CallbackQuery, state: FSMContext):
     try:
         goal = callback.data.replace("goal_", "", 1)
-        logger.info(f"📥 [goal_] goal='{goal}'")
 
         await _finish_client_registration(
             callback=callback,
@@ -473,6 +535,27 @@ async def _finish_client_registration(
             await callback.answer()
             return
 
+        # FIX: проверяем pending_invite
+        pending_invite = data.get('pending_invite')
+        invite_msg = ""
+
+        if pending_invite:
+            trainer = db.get_user(pending_invite)
+            if trainer and db.add_client_to_trainer(trainer['id'], user['id']):
+                invite_msg = f"\n\n✅ Вы автоматически привязаны к тренеру <b>{trainer['full_name']}</b>"
+                try:
+                    await callback.bot.send_message(
+                        chat_id=trainer['telegram_id'],
+                        text=(
+                            f"✅ <b>Новый ученик по ссылке!</b>\n\n"
+                            f"👤 {user['full_name']}\n"
+                            f"📱 @{user['username'] or 'не указан'}"
+                        ),
+                        parse_mode=ParseMode.HTML
+                    )
+                except Exception:
+                    pass
+
         goal_ru = {
             "weight_loss": "Похудение",
             "muscle_gain": "Набор массы",
@@ -485,6 +568,8 @@ async def _finish_client_registration(
             f"🎂 Возраст: {user['age']} лет\n"
             f"📏 Рост: {user['height']} см\n"
             f"🎯 Цель: {goal_ru}"
+            f"{invite_msg}",
+            parse_mode=ParseMode.HTML
         )
 
         await callback.message.answer(
@@ -502,10 +587,6 @@ async def _finish_client_registration(
         await callback.answer("❌ Ошибка", show_alert=True)
 
 
-# ============================================================
-#  /myid
-# ============================================================
-
 @router.message(Command("myid"))
 async def cmd_myid(message: Message):
     try:
@@ -521,9 +602,6 @@ async def cmd_myid(message: Message):
             text += f"📛 Имя в профиле: {user['full_name']}\n"
             if user.get('timezone'):
                 text += f"🌍 Регион: {user['timezone']}\n"
-        else:
-            text += f"\n❌ <b>Ты НЕ зарегистрирован в боте</b>\n"
-            text += f"Используй /start для регистрации"
 
         await message.answer(text, parse_mode=ParseMode.HTML)
 
