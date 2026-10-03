@@ -1,24 +1,33 @@
+# app/handlers/menu.py
 from aiogram import Router, F
-from aiogram.types import Message
+from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.enums import ParseMode
+import traceback
+
 from app.services.db_service import DatabaseService
+from app.models import UserRole
 from app.keyboards.inline import (
     get_trainer_menu_keyboard,
     get_client_menu_keyboard,
     get_clients_list_keyboard,
     get_back_keyboard,
-    get_cancel_keyboard
+    get_cancel_keyboard,
+    get_add_client_choice_keyboard,
+    get_add_client_username_keyboard,
+    get_back_inline_keyboard
 )
-from app.models import UserRole
 from app.utils.logger import get_logger
-import traceback
 
 logger = get_logger(__name__)
 router = Router()
 db = DatabaseService()
 
+
+# ============================================================
+#  НАЗАД
+# ============================================================
 
 @router.message(F.text == "🔙 Назад")
 async def back_to_menu(message: Message):
@@ -50,6 +59,10 @@ async def back_to_menu(message: Message):
         await message.answer("❌ Ошибка при загрузке меню.")
 
 
+# ============================================================
+#  МОИ УЧЕНИКИ
+# ============================================================
+
 @router.message(F.text == "👥 Мои ученики")
 async def show_clients(message: Message):
     try:
@@ -67,8 +80,7 @@ async def show_clients(message: Message):
         if not clients:
             await message.answer(
                 "📭 У вас пока нет учеников.\n\n"
-                "Чтобы добавить ученика, используйте команду:\n"
-                "/add_client @username",
+                "Нажмите «➕ Добавить ученика», чтобы пригласить.",
                 reply_markup=get_back_keyboard()
             )
             return
@@ -86,6 +98,10 @@ async def show_clients(message: Message):
         logger.error(f"Error in show_clients: {e}\n{traceback.format_exc()}")
         await message.answer("❌ Ошибка при загрузке списка учеников.")
 
+
+# ============================================================
+#  СТАТИСТИКА
+# ============================================================
 
 @router.message(F.text == "📊 Статистика")
 async def menu_stats(message: Message):
@@ -117,6 +133,10 @@ async def menu_stats(message: Message):
         logger.error(f"Error in menu_stats: {e}")
         await message.answer("❌ Ошибка при загрузке статистики.")
 
+
+# ============================================================
+#  ОТЧЁТЫ
+# ============================================================
 
 @router.message(F.text == "📈 Отчёты")
 async def menu_reports(message: Message):
@@ -150,6 +170,10 @@ async def menu_reports(message: Message):
         await message.answer("❌ Ошибка при загрузке отчётов.")
 
 
+# ============================================================
+#  НАПОМИНАНИЯ
+# ============================================================
+
 @router.message(F.text == "⏰ Напоминания")
 async def menu_reminders(message: Message):
     try:
@@ -176,6 +200,10 @@ async def menu_reminders(message: Message):
         logger.error(f"Error in menu_reminders: {e}")
         await message.answer("❌ Ошибка при загрузке напоминаний.")
 
+
+# ============================================================
+#  РАССЫЛКА
+# ============================================================
 
 @router.message(F.text == "📨 Рассылка")
 async def menu_broadcast(message: Message):
@@ -209,6 +237,10 @@ async def menu_broadcast(message: Message):
         await message.answer("❌ Ошибка при загрузке рассылки.")
 
 
+# ============================================================
+#  НАСТРОЙКИ
+# ============================================================
+
 @router.message(F.text == "⚙️ Настройки")
 async def menu_settings(message: Message):
     try:
@@ -229,6 +261,7 @@ async def menu_settings(message: Message):
         elif user['role'] == UserRole.TRAINER.value:
             text += f"📱 Телефон: {user['phone'] or 'Не указан'}\n"
             text += f"🏢 Студия: {user['studio_name'] or 'Не указана'}\n"
+            text += f"🌍 Регион: {user.get('timezone') or 'Europe/Moscow'}\n"
 
         text += f"\n<i>Команды для управления:</i>\n"
         text += f"• /edit_profile — изменить профиль\n"
@@ -244,6 +277,10 @@ async def menu_settings(message: Message):
         logger.error(f"Error in menu_settings: {e}")
         await message.answer("❌ Ошибка при загрузке настроек.")
 
+
+# ============================================================
+#  ПОМОЩЬ
+# ============================================================
 
 @router.message(F.text == "❓ Помощь")
 async def menu_help(message: Message):
@@ -261,6 +298,10 @@ async def menu_help(message: Message):
         await message.answer("❌ Ошибка при загрузке помощи.")
 
 
+# ============================================================
+#  ЗАМЕРЫ (ученик)
+# ============================================================
+
 @router.message(F.text == "📝 Внести замеры")
 async def menu_measurements(message: Message, state: FSMContext):
     try:
@@ -276,6 +317,10 @@ async def menu_measurements(message: Message, state: FSMContext):
         logger.error(f"Error in menu_measurements: {e}")
         await message.answer("❌ Ошибка при открытии формы замеров.")
 
+
+# ============================================================
+#  ПРОГРЕСС (ученик)
+# ============================================================
 
 @router.message(F.text == "📊 Мой прогресс")
 async def menu_progress(message: Message):
@@ -293,6 +338,10 @@ async def menu_progress(message: Message):
         await message.answer("❌ Ошибка при загрузке прогресса.")
 
 
+# ============================================================
+#  ОТЧЁТ (ученик)
+# ============================================================
+
 @router.message(F.text == "📄 Мой отчёт")
 async def menu_my_report(message: Message):
     try:
@@ -307,6 +356,31 @@ async def menu_my_report(message: Message):
     except Exception as e:
         logger.error(f"Error in menu_my_report: {e}")
         await message.answer("❌ Ошибка при генерации отчёта.")
+
+
+# ============================================================
+#  PRO-ПОДПИСКА
+# ============================================================
+
+@router.message(F.text == "💎 Pro-подписка")
+async def menu_pro(message: Message):
+    """Обработка кнопки Pro-подписка."""
+    try:
+        user = db.get_user_by_telegram(message.from_user.id)
+        if not user:
+            await message.answer("❌ Вы не зарегистрированы. Используйте /start.")
+            return
+
+        if user['role'] != UserRole.TRAINER.value:
+            await message.answer("❌ Pro-подписка доступна только тренерам.")
+            return
+
+        from app.handlers.payments import cmd_pro
+        await cmd_pro(message)
+
+    except Exception as e:
+        logger.error(f"Error in menu_pro: {e}")
+        await message.answer("❌ Ошибка при открытии Pro-подписки.")
 
 
 # ============================================================
@@ -326,8 +400,6 @@ async def menu_add_client(message: Message):
             await message.answer("❌ Только для тренеров.")
             return
 
-        from app.keyboards.inline import get_add_client_choice_keyboard
-
         await message.answer(
             "➕ <b>Добавить ученика</b>\n\n"
             "<b>Выберите способ:</b>\n\n"
@@ -343,7 +415,7 @@ async def menu_add_client(message: Message):
 
 
 # ============================================================
-#  CALLBACK: ВЫБОР СПОСОБА
+#  CALLBACK: ВЫБОР СПОСОБА ДОБАВЛЕНИЯ
 # ============================================================
 
 @router.callback_query(F.data == "add_client_link")
@@ -391,8 +463,6 @@ async def callback_add_client_link(callback: CallbackQuery):
             f"<i>Можно отправлять много раз — все, кто перейдёт, станут вашими учениками.</i>"
         )
 
-        from app.keyboards.inline import get_back_inline_keyboard
-
         await callback.message.edit_text(
             text,
             parse_mode=ParseMode.HTML,
@@ -423,8 +493,6 @@ async def callback_add_client_username(callback: CallbackQuery):
             f"<i>Ученик получит приглашение и должен будет его подтвердить.</i>"
         )
 
-        from app.keyboards.inline import get_add_client_username_keyboard
-
         await callback.message.edit_text(
             text,
             parse_mode=ParseMode.HTML,
@@ -441,8 +509,6 @@ async def callback_add_client_username(callback: CallbackQuery):
 async def callback_add_client_back(callback: CallbackQuery):
     """Возврат к выбору способа."""
     try:
-        from app.keyboards.inline import get_add_client_choice_keyboard
-
         await callback.message.edit_text(
             "➕ <b>Добавить ученика</b>\n\n"
             "<b>Выберите способ:</b>\n\n"
