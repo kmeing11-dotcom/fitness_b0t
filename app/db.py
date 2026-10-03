@@ -1,5 +1,5 @@
 # app/db.py
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, scoped_session
 from app.config import Config
 from app.models import Base
@@ -61,39 +61,39 @@ class Database:
         """Обычная session (не scoped) — для db_service."""
         return cls.get_session_factory()()
 
-@classmethod
-def init_db(cls):
-    try:
-        Base.metadata.create_all(cls.get_engine())
-        logger.info("✅ Database tables created/verified")
+    @classmethod
+    def init_db(cls):
+        try:
+            Base.metadata.create_all(cls.get_engine())
+            logger.info("✅ Database tables created/verified")
 
-        # FIX: миграции для существующих таблиц
-        cls._run_migrations()
-    except Exception as e:
-        logger.error(f"❌ Failed to create tables: {e}")
-        raise
+            # FIX: миграции для существующих таблиц
+            cls._run_migrations()
+        except Exception as e:
+            logger.error(f"❌ Failed to create tables: {e}")
+            raise
 
-@classmethod
-def _run_migrations(cls):
-    """Добавляет недостающие колонки в существующие таблицы."""
-    from sqlalchemy import text
+    @classmethod
+    def _run_migrations(cls):
+        """
+        Добавляет недостающие колонки в существующие таблицы.
+        Безопасно запускать много раз — IF NOT EXISTS.
+        """
+        migrations = [
+            # users.invite_token
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS invite_token VARCHAR(32)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_invite_token ON users(invite_token)",
+        ]
 
-    migrations = [
-        # users.invite_token
-        "ALTER TABLE users ADD COLUMN IF NOT EXISTS invite_token VARCHAR(32)",
-        "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_invite_token ON users(invite_token)",
-    ]
+        with cls.get_engine().connect() as conn:
+            for sql in migrations:
+                try:
+                    conn.execute(text(sql))
+                    conn.commit()
+                except Exception as e:
+                    logger.debug(f"Migration skipped: {sql[:60]}... ({e})")
 
-    with cls.get_engine().connect() as conn:
-        for sql in migrations:
-            try:
-                conn.execute(text(sql))
-                conn.commit()
-            except Exception as e:
-                # Если колонка уже есть — пропускаем
-                logger.debug(f"Migration skipped: {sql[:50]}... ({e})")
-
-    logger.info("✅ Migrations applied")
+        logger.info("✅ Migrations applied")
 
     @classmethod
     def drop_db(cls):
@@ -126,7 +126,6 @@ def init_db():
     Database.init_db()
 
 
-# FIX: Session и engine оставлены для обратной совместимости —
-# reminder_service.py использует `from app.db import Session`
+# Для импорта в reminder_service.py:
 Session = Database.get_session()
 engine = Database.get_engine()
