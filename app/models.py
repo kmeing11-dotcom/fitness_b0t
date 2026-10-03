@@ -205,4 +205,4 @@ class Subscription(Base):
         return self.expires_at < func.now() if self.expires_at else True
 
     def __repr__(self):
-        return f"<Subscription(user_id={self.user_id}, plan={self.plan}, active={self.is_active})>"
+        return f"<Subscription(user_id={self.user_id}, plan={self.plan}, is_trial={self.is_trial}, active={self.is_active})>"
